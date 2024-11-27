@@ -1,0 +1,23 @@
+[package]
+name = "frontend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+slint = "1.8.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2"}
+wasm-bindgen-futures = { version = "0.4" }
+console_error_panic_hook = "0.1"
+
+[lib]
+name = "frontend"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "frontend_bin"
+path = "src/main.rs"
+
+[profile.dev]
+panic = "unwind"
