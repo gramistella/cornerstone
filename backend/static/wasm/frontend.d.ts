@@ -7,22 +7,24 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly start_wasm: () => void;
-  readonly slint_mock_elapsed_time: (a: number) => void;
-  readonly slint_get_mocked_time: () => number;
+  readonly slint_qt_get_widget: (a: number) => number;
+  readonly slint_mock_elapsed_time: (a: bigint) => void;
+  readonly slint_get_mocked_time: () => bigint;
   readonly slint_send_mouse_click: (a: number, b: number, c: number) => void;
   readonly slint_send_keyboard_char: (a: number, b: number, c: number) => void;
   readonly send_keyboard_string_sequence: (a: number, b: number) => void;
+  readonly __externref_table_alloc: () => number;
+  readonly __wbindgen_export_1: WebAssembly.Table;
+  readonly __wbindgen_exn_store: (a: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-  readonly __wbindgen_export_2: WebAssembly.Table;
-  readonly __wbindgen_export_3: WebAssembly.Table;
-  readonly closure427_externref_shim: (a: number, b: number, c: number) => void;
-  readonly closure868_externref_shim: (a: number, b: number, c: number) => void;
-  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h90ffba2fb193d549: (a: number, b: number) => void;
-  readonly closure873_externref_shim: (a: number, b: number, c: number, d: number) => void;
-  readonly closure1050_externref_shim: (a: number, b: number, c: number) => void;
-  readonly __externref_table_alloc: () => number;
-  readonly __wbindgen_exn_store: (a: number) => void;
+  readonly __wbindgen_export_5: WebAssembly.Table;
+  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__h2d68dcfc265b0a09: (a: number, b: number) => void;
+  readonly closure1776_externref_shim: (a: number, b: number, c: any) => void;
+  readonly closure2015_externref_shim: (a: number, b: number, c: any) => void;
+  readonly _dyn_core__ops__function__FnMut_____Output___R_as_wasm_bindgen__closure__WasmClosure___describe__invoke__hcfe751566d2f7eec: (a: number, b: number) => void;
+  readonly closure2020_externref_shim: (a: number, b: number, c: any, d: any) => void;
+  readonly closure2197_externref_shim: (a: number, b: number, c: any) => void;
   readonly __wbindgen_start: () => void;
 }
 

@@ -2,7 +2,7 @@ pub mod runner;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    runner::run_app();
+    runner::run();
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -15,7 +15,7 @@ mod wasm {
     pub fn main() {
         console_error_panic_hook::set_once();
         spawn_local(async {
-            runner::run_app();
+            runner::run();
         });
     }
 }

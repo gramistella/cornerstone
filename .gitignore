@@ -1,0 +1,33 @@
+# Rust / Cargo
+# Ignore the main build directory for the workspace
+/target
+
+# The lock file should be committed for reproducible builds, so we don't ignore it.
+# Cargo.lock
+
+
+# WASM / Static build artifacts
+/frontend/static/wasm-pack/
+/backend/static/wasm/
+
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+
+# Log files
+*.log
+debug/
+release/
+
+
+# IDE / Editor folders
+.idea/
+.vscode/
+*.swp
+*~
+
+
+# Justfile local config
+.justfile.local

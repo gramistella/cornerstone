@@ -1,0 +1,11 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0.219", features = ["derive"] }
+slint = { version = "1.12.1", features = ["serde"] }
+
+[build-dependencies]
+slint-build = "1.12.1"

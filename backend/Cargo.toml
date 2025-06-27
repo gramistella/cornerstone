@@ -4,8 +4,27 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.7.9"
-tokio = { version = "1", features = ["full", "rt-multi-thread"] }
-reqwest = "0.12.9"
-chrono = "0.4"
-tower-http = { version = "0.6.2", features = ["fs"] }
+axum = { version = "0.8.4", features = ["macros"] }
+tokio = { version = "1.45.1", features = ["full", "rt-multi-thread"] }
+reqwest = "0.12.20"
+chrono = "0.4.41"
+tower-http = { version = "0.6.6", features = ["fs"] }
+common = { path = "../common" }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.19"
+
+[lib]
+name = "backend"
+path = "src/lib.rs"
+
+[dev-dependencies]
+# Dependencies needed ONLY for running tests and benchmarks
+
+# For making test requests and handling response bodies
+hyper = { version = "1.4.1", features = ["full"] }
+# For collecting the response body into bytes.
+http-body-util = "0.1"
+# For deserializing JSON in our tests
+serde_json = "1.0.140"
+# For the `ServiceExt::oneshot` testing utility
+tower = { version = "0.5.2", features = ["full"] }
