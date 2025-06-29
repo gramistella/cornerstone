@@ -5,16 +5,21 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     routing::{get, get_service, post, put, delete},
+    middleware,
     Json, Router,
 };
 use common::ContactDto; // Assuming Contact is not directly used for serde
 use std::{net::SocketAddr, sync::{Arc, Mutex}};
 use tower_http::services::ServeDir;
 use tracing;
+use sqlx::SqlitePool;
+
+use crate::auth;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub contacts: Arc<Mutex<Vec<ContactDto>>>,
+    pub db_pool: SqlitePool,
+    pub jwt_secret: String,
 }
 
 pub async fn run_server(app_state: AppState) {
@@ -28,102 +33,184 @@ pub async fn run_server(app_state: AppState) {
 }
 
 pub fn create_router(app_state: AppState) -> Router {
-    let static_file_service = get_service(ServeDir::new("static")).handle_error(|error| async move {
+    let static_file_service = get_service(ServeDir::new("backend/static")).handle_error(|error| async move {
+        tracing::error!("Failed to serve static file: {}", error);
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to serve static file: {}", error),
         )
+
     });
 
-    // Pass the AppState as Arc<AppState> to the router, as you correctly did for create_contact
-    // When you call .with_state(app_state) with an AppState that derives Clone,
-    // Axum internally wraps it in an Arc. So, the handlers should expect Arc<AppState>.
+    // New auth routes
+    let auth_routes = Router::new()
+        .route("/register", post(auth::register))
+        .route("/login", post(auth::login));
+
+    // Existing contact routes (will be protected later)
+    let contact_routes = Router::new()
+        .route("/contacts", get(get_contacts).post(create_contact))
+        .route("/contacts/{id}", get(get_contact).put(update_contact).delete(delete_contact))
+        .route_layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            crate::auth::auth_middleware,
+        ));
+    
     Router::new()
-        .nest("/api",
-              Router::new()
-                  .route("/contacts", get(get_contacts).post(create_contact))
-                  .route("/contacts/{id}", get(get_contact).put(update_contact).delete(delete_contact))
-                  .with_state(Arc::new(app_state)) // Wrap the initial app_state in Arc here
+        .nest("/api", 
+            // Combine auth and contact routes
+            auth_routes.merge(contact_routes)
         )
+        .with_state(app_state) // Provide state to all nested routes
         .fallback_service(static_file_service)
+
 }
 
 // --- API Handlers ---
 
 #[debug_handler]
 async fn create_contact(
-    State(state): State<Arc<AppState>>,
-    Json(mut new_contact_dto): Json<ContactDto>,
-) -> (StatusCode, Json<ContactDto>) {
-    tracing::info!("Creating contact");
-    let mut contacts = state.contacts.lock().unwrap();
+    State(state): State<AppState>,
+    Json(new_contact_dto): Json<ContactDto>,
+) -> Result<(StatusCode, Json<ContactDto>), StatusCode> {
+    tracing::info!("Creating contact: {:?}", new_contact_dto);
+    
+    let result = sqlx::query_as!(
+        ContactDto,
+        r#"
+        INSERT INTO contacts (name, email, age, subscribed, contact_type)
+        VALUES (?, ?, ?, ?, ?)
+        RETURNING id, name, email, age, subscribed, contact_type;
+        "#,
+        new_contact_dto.name,
+        new_contact_dto.email,
+        new_contact_dto.age,
+        new_contact_dto.subscribed,
+        new_contact_dto.contact_type
+    )
+    .fetch_one(&state.db_pool)
+    .await;
 
-    // Generate a new ID
-    let new_id = contacts.iter().filter_map(|c| c.id).max().unwrap_or(0) + 1;
-    new_contact_dto.id = Some(new_id);
-
-    contacts.push(new_contact_dto.clone());
-
-    (StatusCode::CREATED, Json(new_contact_dto))
+    match result {
+        Ok(created_contact) => Ok((StatusCode::CREATED, Json(created_contact))),
+        Err(e) => {
+            tracing::error!("Failed to create contact: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 
 #[debug_handler]
 async fn get_contact(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<u32>,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
 ) -> Result<Json<ContactDto>, StatusCode> {
     tracing::info!("Fetching single contact with id: {}", id);
-    let contacts = state.contacts.lock().unwrap();
+    
+    let result = sqlx::query_as!(
+        ContactDto,
+        "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE id = ?",
+        id
+    )
+    .fetch_optional(&state.db_pool)
+    .await;
 
-    if let Some(contact) = contacts.iter().find(|c| c.id == Some(id)) {
-        Ok(Json(contact.clone()))
-    } else {
-        Err(StatusCode::NOT_FOUND)
+    match result {
+        Ok(Some(contact)) => Ok(Json(contact)),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to fetch contact: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
 #[debug_handler]
 async fn get_contacts(
-    State(state): State<Arc<AppState>>, // <--- CHANGE THIS LINE to expect Arc<AppState>
-) -> Json<Vec<ContactDto>> {
-    tracing::info!("Fetching contacts from state");
-    let contacts = state.contacts.lock().unwrap();
-    Json(contacts.clone())
-}
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ContactDto>>, StatusCode> {
+    tracing::info!("Fetching all contacts from database");
+    
+    let result = sqlx::query_as!(
+        ContactDto,
+        "SELECT id, name, email, age, subscribed, contact_type FROM contacts"
+    )
+    .fetch_all(&state.db_pool)
+    .await;
 
-// --- NEW HANDLER for updating a contact ---
-#[debug_handler]
-async fn update_contact(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<u32>,
-    Json(updated_contact): Json<ContactDto>,
-) -> Result<Json<ContactDto>, StatusCode> {
-    tracing::info!("Updating contact with id: {}", id);
-    let mut contacts = state.contacts.lock().unwrap();
-
-    if let Some(contact) = contacts.iter_mut().find(|c| c.id == Some(id)) {
-        *contact = updated_contact.clone();
-        Ok(Json(updated_contact))
-    } else {
-        Err(StatusCode::NOT_FOUND)
+    match result {
+        Ok(contacts) => Ok(Json(contacts)),
+        Err(e) => {
+            tracing::error!("Failed to fetch contacts: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
-// --- NEW HANDLER for deleting a contact ---
+#[debug_handler]
+async fn update_contact(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(updated_contact): Json<ContactDto>,
+) -> Result<Json<ContactDto>, StatusCode> {
+    tracing::info!("Updating contact with id: {}", id);
+    
+    let result = sqlx::query(
+        r#"
+        UPDATE contacts
+        SET name = ?, email = ?, age = ?, subscribed = ?, contact_type = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(&updated_contact.name)
+    .bind(&updated_contact.email)
+    .bind(updated_contact.age)
+    .bind(updated_contact.subscribed)
+    .bind(&updated_contact.contact_type)
+    .bind(id)
+    .execute(&state.db_pool)
+    .await;
+
+    match result {
+        Ok(execution_result) => {
+            if execution_result.rows_affected() > 0 {
+                // Return the updated data
+                Ok(Json(updated_contact))
+            } else {
+                Err(StatusCode::NOT_FOUND)
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to update contact: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 #[debug_handler]
 async fn delete_contact(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AppState>,
     Path(id): Path<u32>,
 ) -> StatusCode {
     tracing::info!("Deleting contact with id: {}", id);
-    let mut contacts = state.contacts.lock().unwrap();
-    let original_len = contacts.len();
-    contacts.retain(|c| c.id != Some(id));
+    
+    let result = sqlx::query("DELETE FROM contacts WHERE id = ?")
+        .bind(id)
+        .execute(&state.db_pool)
+        .await;
 
-    if contacts.len() < original_len {
-        StatusCode::NO_CONTENT
-    } else {
-        StatusCode::NOT_FOUND
+    match result {
+        Ok(execution_result) => {
+            if execution_result.rows_affected() > 0 {
+                StatusCode::NO_CONTENT
+            } else {
+                StatusCode::NOT_FOUND
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to delete contact: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     }
 }

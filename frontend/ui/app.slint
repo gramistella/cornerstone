@@ -107,48 +107,113 @@ export component ContactForm inherits VerticalLayout {
 }
 
 
+export component LoginPage inherits VerticalLayout {
+    in-out property<bool> is-register-view: false;
+    callback login(email: string, password: string);
+    callback register(email: string, password: string);
+
+    alignment: center;
+    spacing: 20px;
+
+    Text {
+        text: is-register-view ? "Register New Account" : "Login to Your Account";
+        font-size: 24px;
+        font-weight: 700;
+        color: #2c3e50;
+    }
+    
+    email_input := LineEdit { placeholder-text: "Email"; }
+    password_input := LineEdit { 
+        input-type: password;
+        placeholder-text: "Password"; 
+    }
+
+    HorizontalLayout {
+        spacing: 10px;
+        Button {
+            text: is-register-view ? "Register" : "Login";
+            primary: true;
+            clicked => {
+                if (root.is-register-view) {
+                    root.register(email_input.text, password_input.text);
+                } else {
+                    root.login(email_input.text, password_input.text);
+                }
+            }
+        }
+        Button {
+            text: is-register-view ? "Switch to Login" : "Switch to Register";
+            clicked => { root.is-register-view = !root.is-register-view; }
+        }
+    }
+}
+
+
 // --- Main App Component ---
 // Composes the UI and manages the central state.
 // --- Main App Component (Corrected with a logic-holding widget) ---
+// --- Main App Component (Definitively Corrected) ---
 export component App inherits Window {
     title: "Axum + Rust + Slint CRUD Demo";
     width: 1000px;
     height: 800px;
+
+    // --- STATE ---
+    in-out property<string> auth_token: ""; // JWT will be stored here
     in-out property<[Contact]> contacts: [];
     in-out property<Contact> contact_to_edit: { id: -1, name: "", email: "", age: -1, subscribed: false, contact_type: "Customer" };
 
+    // --- CALLBACKS ---
+    callback login(email: string, password: string);
+    callback register(email: string, password: string);
+    callback logout();
+    
     callback fetch_contacts();
     callback add_contact(name: string, email: string, age: int, subscribed: bool, contact_type: string);
     callback update_contact(contact: Contact);
     callback delete_contact(id: int);
     callback get_contact_for_edit(id: int);
 
+    // --- UI LAYOUT ---
+    // A Window must have a single child. We use a VerticalLayout as that child.
+    // Inside the layout, we use two `if` statements with opposite conditions
+    // to swap between the login page and the main content.
     VerticalLayout {
-        padding: 20px;
-        spacing: 20px;
-        Text { text: "Contact Management"; font-size: 28px; font-weight: 700; horizontal-alignment: center; color: #2c3e50; }
-        ContactListSection {
-            contacts: root.contacts;
-            fetch_contacts => { root.fetch_contacts(); }
-            edit_contact(id) => { root.get_contact_for_edit(id); }
-            delete_contact(id) => { root.delete_contact(id); }
-        }
-        the_form := ContactForm {
-            contact_to_edit <=> root.contact_to_edit;
-            add_contact(name, email, age, sub, type) => { root.add_contact(name, email, age, sub, type); }
-            update_contact(contact) => { root.update_contact(contact); }
-            cancel_edit => { root.contact_to_edit = { id: -1, name: "", email: "", age: 30, subscribed: false, contact_type: "Customer" }; }
+        // Show the LoginPage when the token is empty
+        if root.auth_token == "" : LoginPage {
+            vertical-stretch: 1;
+            login(email, password) => { root.login(email, password) }
+            register(email, password) => { root.register(email, password) }
         }
 
-        // ======================================================================================
-        // --- THIS IS THE FINAL FIX ---
-        // This `for` loop watches the `contact_to_edit` property.
-        // Whenever it changes, the TouchArea is re-created, and its `init` handler runs.
-        // The `init` handler is a valid place to make impure calls like `reset()`.
-        // ======================================================================================
-        for item in [root.contact_to_edit] : TouchArea {
-            init => {
-                the_form.reset();
+        // Show the main content when the token is NOT empty
+        if root.auth_token != "" : VerticalLayout {
+            padding: 20px;
+            spacing: 20px;
+            
+            HorizontalLayout {
+                alignment: center;
+                spacing: 20px;
+                Text { text: "Contact Management"; font-size: 28px; font-weight: 700; color: #2c3e50; }
+                Button { text: "Logout"; clicked => { root.logout() } }
+            }
+            
+            ContactListSection {
+                contacts: root.contacts;
+                fetch_contacts => { root.fetch_contacts(); }
+                edit_contact(id) => { root.get_contact_for_edit(id); }
+                delete_contact(id) => { root.delete_contact(id); }
+            }
+            
+            the_form := ContactForm {
+                contact_to_edit <=> root.contact_to_edit;
+                add_contact(name, email, age, sub, type) => { root.add_contact(name, email, age, sub, type); }
+                update_contact(contact) => { root.update_contact(contact); }
+                cancel_edit => { root.contact_to_edit = { id: -1, name: "", email: "", age: 30, subscribed: false, contact_type: "Customer" }; }
+            }
+
+            for item in [root.contact_to_edit] : TouchArea {
+                init => { the_form.reset(); }
             }
         }
     }

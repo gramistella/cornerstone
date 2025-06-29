@@ -31,3 +31,6 @@ release/
 
 # Justfile local config
 .justfile.local
+
+# Environment variables
+.env

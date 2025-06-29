@@ -4,3 +4,4 @@
 // By declaring `web_server` as a public module here, we make its
 // contents available to other crates, like our integration test.
 pub mod web_server;
+pub mod auth;
