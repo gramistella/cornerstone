@@ -7,8 +7,10 @@
 
 
 # WASM / Static build artifacts
-/frontend/static/wasm-pack/
-/backend/static/wasm/
+/frontend/static/wasm-pack/*
+!/frontend/static/wasm-pack/.gitkeep
+/backend/static/wasm/*
+!/backend/static/wasm/.gitkeep
 
 
 # Operating System files
