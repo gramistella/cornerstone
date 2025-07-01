@@ -25,7 +25,7 @@ db-prepare:
     @cargo sqlx prepare --workspace -- --all-targets
 
 # Build a specific package by name.
-# USAGE: just build backend | just build frontend | just build common
+# USAGE: just build backend | just build frontend_slint | just build common
 build package:
     @echo "📦 Building package: '{{package}}'..."
     @cargo build -p {{package}}
@@ -36,8 +36,8 @@ build-all: build-backend build-wasm
 
 # Convenience alias to build only the frontend.
 # Useful for updating Slint macro expansions for rust-analyzer.
-build-frontend:
-    @just build "frontend"
+build-frontend-slint:
+    @just build "frontend-slint"
 
 # Convenience alias to build only the backend.
 build-backend:
@@ -47,11 +47,11 @@ build-backend:
 # This creates the necessary .js and .wasm files in the frontend/pkg directory.
 build-wasm:
     @echo "🧹 Cleaning wasm-pack output folder (keeping .gitkeep)..."
-    @find frontend/static/wasm-pack -type f ! -name '.gitkeep' -delete
-    @find frontend/static/wasm-pack -type d -empty -not -path 'frontend/static/wasm-pack' -delete
-    @echo "📦 Building WebAssembly frontend..."
-    @cd frontend && wasm-pack build --target web --out-dir static/wasm-pack
-    @rm -f frontend/static/wasm-pack/.gitignore
+    @find frontend_slint/static/wasm-pack -type f ! -name '.gitkeep' -delete
+    @find frontend_slint/static/wasm-pack -type d -empty -not -path 'frontend_slint/static/wasm-pack' -delete
+    @echo "📦 Building Slint's WebAssembly frontend..."
+    @cd frontend_slint && wasm-pack build --target web --out-dir static/wasm-pack
+    @rm -f frontend_slint/static/wasm-pack/.gitignore
 
 # -----------------------------------------------------------------------------
 # # Test Commands
@@ -93,7 +93,7 @@ db-migrate:
 copy-frontend:
     @echo "-  Copying frontend files to backend/static/..."
     @mkdir -p backend/static/wasm
-    @rsync -av --exclude='.gitkeep' frontend/static/wasm-pack/ backend/static/wasm/
+    @rsync -av --exclude='.gitkeep' frontend_slint/static/wasm-pack/ backend/static/wasm/
     @echo "   ...done"
 
 # Build and run the backend server.
@@ -113,7 +113,7 @@ run-web: build-wasm copy-frontend run-backend
 # NOTE: Requires `cargo-watch` (`cargo install cargo-watch`).
 watch:
     @echo "👀 Watching for changes... (Backend will restart on save)"
-    @cargo watch -q -c -w backend -w common -w frontend/src -w frontend/ui -x "run-web"
+    @cargo watch -q -c -w backend -w common -w frontend_slint/src -w frontend_slint/ui -x "run-web"
 
 # -----------------------------------------------------------------------------
 # # Clean Commands
@@ -123,8 +123,8 @@ watch:
 clean:
     @echo "🧹 Cleaning build artifacts..."
     @rm -rf ./target
-    @find ./frontend/static/wasm-pack -type f ! -name '.gitkeep' -delete
-    @find ./frontend/static/wasm-pack -type d -empty -not -path './frontend/static/wasm-pack' -delete
+    @find ./frontend_slint/static/wasm-pack -type f ! -name '.gitkeep' -delete
+    @find ./frontend_slint/static/wasm-pack -type d -empty -not -path './frontend_slint/static/wasm-pack' -delete
     @find ./backend/static/wasm -type f ! -name '.gitkeep' -delete
     @find ./backend/static/wasm -type d -empty -not -path './backend/static/wasm' -delete
 

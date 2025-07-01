@@ -1885,7 +1885,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "frontend"
+name = "frontend_slint"
 version = "0.1.0"
 dependencies = [
  "common",

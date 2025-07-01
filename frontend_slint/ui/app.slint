@@ -1,0 +1,220 @@
+//
+// axum-sqlx-slint CRUD Example UI (Corrected)
+//
+
+// Ensure this import points to your struct definition.
+// The `Contact` struct should contain all editable fields:
+// { id: int, name: string, email: string, age: int, subscribed: bool, contact_type: string }
+import { Contact } from "../../common/ui/definitions.slint";
+
+import { Button, ListView, SpinBox, CheckBox, ComboBox, VerticalBox, HorizontalBox, LineEdit } from "std-widgets.slint";
+
+// --- Contact Item Component ---
+// Represents a single contact entry in the list, now with Edit and Delete buttons.
+export component ContactListItem inherits HorizontalLayout {
+    in property<Contact> contact;
+    callback edit_clicked(id: int);
+    callback delete_clicked(id: int);
+
+    spacing: 10px;
+    alignment: center;
+
+    Text { text: contact.name; font-weight: 600; width: 150px; }
+    Text { text: "(" + contact.email + ")"; color: #555; width: 200px; }
+    
+    Button {
+        text: "Edit";
+        clicked => { root.edit_clicked(contact.id) }
+    }
+    Button {
+        text: "Delete";
+        clicked => { root.delete_clicked(contact.id) }
+    }
+}
+
+// --- Contact List Section Component ---
+// Propagates the new edit and delete callbacks from the list items.
+export component ContactListSection inherits VerticalLayout {
+    in property<[Contact]> contacts;
+    callback fetch_contacts();
+    callback edit_contact(id: int);
+    callback delete_contact(id: int);
+
+    spacing: 10px;
+
+    Text { text: "Existing Contacts:"; font-size: 18px; font-weight: 600; color: #34495e; }
+    Button { text: "Fetch Contacts from Backend"; primary: true; clicked => { root.fetch_contacts() } }
+
+    ListView {
+        height: 250px;
+        for contact in root.contacts : ContactListItem {
+            contact: contact;
+            edit_clicked(id) => { root.edit_contact(id) }
+            delete_clicked(id) => { root.delete_contact(id) }
+        }
+    }
+}
+
+// --- Contact Form Component (Refactored for Add & Edit) ---
+// A unified form for both creating and updating contacts.
+// --- Contact Form Component (Corrected with explicit reset) ---
+export component ContactForm inherits VerticalLayout {
+    in-out property<Contact> contact_to_edit;
+    callback add_contact(name: string, email: string, age: int, subscribed: bool, contact_type: string);
+    callback update_contact(contact: Contact);
+    callback cancel_edit();
+    callback reset();
+
+    reset => {
+        name_input.text = root.contact_to_edit.id == -1 ? "" : root.contact_to_edit.name;
+        email_input.text = root.contact_to_edit.id == -1 ? "" : root.contact_to_edit.email;
+        age_input.value = root.contact_to_edit.id == -1 ? 30 : root.contact_to_edit.age;
+        subscribed_input.checked = root.contact_to_edit.id == -1 ? false : root.contact_to_edit.subscribed;
+        type_input.current-value = root.contact_to_edit.id == -1 ? "Customer" : root.contact_to_edit.contact_type;
+    }
+
+    spacing: 10px;
+    Text { text: root.contact_to_edit.id == -1 ? "Add New Contact:" : "Edit Contact:"; font-size: 18px; font-weight: 600; color: #34495e; }
+    name_input := LineEdit { placeholder-text: "Name"; }
+    email_input := LineEdit { placeholder-text: "Email"; }
+    HorizontalBox {
+        spacing: 10px;
+        Text { text: "Age:"; vertical-alignment: center; }
+        age_input := SpinBox { minimum: 0; maximum: 120; }
+    }
+    subscribed_input := CheckBox { text: "Subscribe to Newsletter"; }
+    HorizontalBox {
+        spacing: 10px;
+        Text { text: "Contact Type:"; vertical-alignment: center; }
+        type_input := ComboBox { model: ["Customer", "Lead", "Partner", "Other"]; }
+    }
+    HorizontalLayout {
+        spacing: 10px;
+        Button {
+            text: root.contact_to_edit.id == -1 ? "Add Contact" : "Update Contact";
+            primary: true;
+            clicked => {
+                if (root.contact_to_edit.id == -1) {
+                    root.add_contact(name_input.text, email_input.text, age_input.value, subscribed_input.checked, type_input.current-value);
+                } else {
+                    root.update_contact({ id: root.contact_to_edit.id, name: name_input.text, email: email_input.text, age: age_input.value, subscribed: subscribed_input.checked, contact_type: type_input.current-value });
+                }
+                root.cancel_edit();
+            }
+        }
+        if root.contact_to_edit.id != -1 : Button { text: "Cancel"; clicked => { root.cancel_edit(); } }
+    }
+}
+
+
+export component LoginPage inherits VerticalLayout {
+    in-out property<bool> is-register-view: false;
+    callback login(email: string, password: string);
+    callback register(email: string, password: string);
+
+    alignment: center;
+    spacing: 20px;
+
+    Text {
+        text: is-register-view ? "Register New Account" : "Login to Your Account";
+        font-size: 24px;
+        font-weight: 700;
+        color: #2c3e50;
+    }
+    
+    email_input := LineEdit { placeholder-text: "Email"; }
+    password_input := LineEdit { 
+        input-type: password;
+        placeholder-text: "Password"; 
+    }
+
+    HorizontalLayout {
+        spacing: 10px;
+        Button {
+            text: is-register-view ? "Register" : "Login";
+            primary: true;
+            clicked => {
+                if (root.is-register-view) {
+                    root.register(email_input.text, password_input.text);
+                } else {
+                    root.login(email_input.text, password_input.text);
+                }
+            }
+        }
+        Button {
+            text: is-register-view ? "Switch to Login" : "Switch to Register";
+            clicked => { root.is-register-view = !root.is-register-view; }
+        }
+    }
+}
+
+
+// --- Main App Component ---
+// Composes the UI and manages the central state.
+// --- Main App Component (Corrected with a logic-holding widget) ---
+// --- Main App Component (Definitively Corrected) ---
+export component App inherits Window {
+    title: "Axum + Rust + Slint CRUD Demo";
+    width: 1000px;
+    height: 800px;
+
+    // --- STATE ---
+    in-out property<string> auth_token: ""; // JWT will be stored here
+    in-out property<[Contact]> contacts: [];
+    in-out property<Contact> contact_to_edit: { id: -1, name: "", email: "", age: -1, subscribed: false, contact_type: "Customer" };
+
+    // --- CALLBACKS ---
+    callback login(email: string, password: string);
+    callback register(email: string, password: string);
+    callback logout();
+    
+    callback fetch_contacts();
+    callback add_contact(name: string, email: string, age: int, subscribed: bool, contact_type: string);
+    callback update_contact(contact: Contact);
+    callback delete_contact(id: int);
+    callback get_contact_for_edit(id: int);
+
+    // --- UI LAYOUT ---
+    // A Window must have a single child. We use a VerticalLayout as that child.
+    // Inside the layout, we use two `if` statements with opposite conditions
+    // to swap between the login page and the main content.
+    VerticalLayout {
+        // Show the LoginPage when the token is empty
+        if root.auth_token == "" : LoginPage {
+            vertical-stretch: 1;
+            login(email, password) => { root.login(email, password) }
+            register(email, password) => { root.register(email, password) }
+        }
+
+        // Show the main content when the token is NOT empty
+        if root.auth_token != "" : VerticalLayout {
+            padding: 20px;
+            spacing: 20px;
+            
+            HorizontalLayout {
+                alignment: center;
+                spacing: 20px;
+                Text { text: "Contact Management"; font-size: 28px; font-weight: 700; color: #2c3e50; }
+                Button { text: "Logout"; clicked => { root.logout() } }
+            }
+            
+            ContactListSection {
+                contacts: root.contacts;
+                fetch_contacts => { root.fetch_contacts(); }
+                edit_contact(id) => { root.get_contact_for_edit(id); }
+                delete_contact(id) => { root.delete_contact(id); }
+            }
+            
+            the_form := ContactForm {
+                contact_to_edit <=> root.contact_to_edit;
+                add_contact(name, email, age, sub, type) => { root.add_contact(name, email, age, sub, type); }
+                update_contact(contact) => { root.update_contact(contact); }
+                cancel_edit => { root.contact_to_edit = { id: -1, name: "", email: "", age: 30, subscribed: false, contact_type: "Customer" }; }
+            }
+
+            for item in [root.contact_to_edit] : TouchArea {
+                init => { the_form.reset(); }
+            }
+        }
+    }
+}

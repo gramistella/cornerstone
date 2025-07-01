@@ -1,0 +1,42 @@
+[package]
+name = "frontend_slint"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+slint = "1.12.1"
+common = { path = "../common" }
+reqwest = { version = "0.12.20", features = ["json"] }
+serde = { version = "1.0.219", features = ["derive"] }
+# General tokio dependency (without 'net' feature) for things like spawn_local
+tokio = { version = "1.45.1", features = ["macros"] } # 'macros' is often useful
+tracing = "0.1.41"
+
+
+# Dependencies specifically for the WASM target
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.100"
+wasm-bindgen-futures = "0.4.50"
+console_error_panic_hook = "0.1.7"
+tracing-wasm = "0.2.1"
+
+# Dependencies specifically for NATIVE targets (NOT WASM)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Here, we enable the 'net' feature only for native builds
+tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros", "net"] }
+
+
+[build-dependencies]
+slint-build = "1.12.1"
+
+[lib]
+name = "frontend"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "frontend_bin"
+path = "src/main.rs"
+
+[profile.dev]
+panic = "unwind"
