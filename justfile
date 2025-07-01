@@ -1,6 +1,9 @@
 # Use BASH for more advanced shell features
 set shell := ["bash", "-euc"]
 
+# Load environment variables from .env files
+set dotenv-load := true
+
 # Default command to run when you just type `just`
 default: check
 
@@ -146,3 +149,16 @@ distclean: clean
 fmt:
     @echo "💅 Formatting all Rust code..."
     @cargo fmt --all
+
+# DANGER: Deletes and recreates the database, then runs all migrations.
+# This will ask for confirmation before proceeding.
+[confirm("⚠️  This will DELETE the current database. Are you sure?")]
+db-reset:
+    @echo "-> Proceeding with database reset..."
+    @echo "  - Deleting old database..."
+    @rm -f backend/database.db
+    @echo "  - Creating a new database file..."
+    @touch backend/database.db
+    @echo "  - Running migrations to recreate the database and schema..."
+    @just db-migrate
+    @echo "✨ Database reset complete."

@@ -76,20 +76,24 @@ pub fn create_router(app_state: AppState) -> Router {
 #[debug_handler]
 async fn create_contact(
     State(state): State<AppState>,
+    Extension(user_id_str): Extension<String>,
     Json(new_contact_dto): Json<ContactDto>,
 ) -> Result<(StatusCode, Json<ContactDto>), AppError> {
-    tracing::info!("Creating contact: {:?}", new_contact_dto);
+    tracing::info!("Creating contact: {:?}, assigned to user {}", new_contact_dto, user_id_str);
 
     // Validate the new contact DTO
     new_contact_dto.validate()?;
 
+    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
+
     let result = sqlx::query_as!(
         ContactDto,
         r#"
-        INSERT INTO contacts (name, email, age, subscribed, contact_type)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO contacts (user_id, name, email, age, subscribed, contact_type)
+        VALUES (?, ?, ?, ?, ?, ?)
         RETURNING id, name, email, age, subscribed, contact_type;
         "#,
+        user_id, // Add the user_id here
         new_contact_dto.name,
         new_contact_dto.email,
         new_contact_dto.age,
@@ -114,13 +118,17 @@ async fn create_contact(
 async fn get_contact(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Extension(user_id_str): Extension<String>,
 ) -> Result<Json<ContactDto>, AppError> {
-    tracing::info!("Fetching single contact with id: {}", id);
+    tracing::info!("Fetching single contact with id: {} for user {}", id, user_id_str);
+
+    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
 
     let result = sqlx::query_as!(
         ContactDto,
-        "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE id = ?",
-        id
+        "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE id = ? AND user_id = ?",
+        id,
+        user_id
     )
     .fetch_optional(&state.db_pool)
     .await;
@@ -140,19 +148,22 @@ async fn get_contact(
 #[debug_handler]
 async fn get_contacts(
     State(state): State<AppState>,
-    Extension(user_id): Extension<String>,
+    Extension(user_id_str): Extension<String>,
 ) -> Result<Json<Vec<ContactDto>>, AppError> {
 
     // Now you have the user's ID and can use it in your logic.
     // The type `String` must match exactly what you inserted in the middleware.
     tracing::info!(
         "Fetching all contacts from database for user_id: {}",
-        user_id
+        user_id_str
     );
 
+    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
+    
     let result = sqlx::query_as!(
         ContactDto,
-        "SELECT id, name, email, age, subscribed, contact_type FROM contacts"
+        "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE user_id = ?",
+        user_id
     )
     .fetch_all(&state.db_pool)
     .await;
@@ -172,15 +183,20 @@ async fn get_contacts(
 async fn update_contact(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Extension(user_id_str): Extension<String>,
     Json(updated_contact): Json<ContactDto>,
 ) -> Result<Json<ContactDto>, AppError> {
-    tracing::info!("Updating contact with id: {}", id);
+    tracing::info!("Updating contact with id: {} for user {}", id, user_id_str);
+
+    updated_contact.validate()?;
+    
+    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
 
     let result = sqlx::query(
         r#"
         UPDATE contacts
         SET name = ?, email = ?, age = ?, subscribed = ?, contact_type = ?
-        WHERE id = ?
+        WHERE id = ? AND user_id = ?
         "#,
     )
     .bind(&updated_contact.name)
@@ -189,6 +205,7 @@ async fn update_contact(
     .bind(updated_contact.subscribed)
     .bind(&updated_contact.contact_type)
     .bind(id)
+    .bind(user_id)
     .execute(&state.db_pool)
     .await;
 
@@ -213,12 +230,16 @@ async fn update_contact(
 #[debug_handler]
 async fn delete_contact(
     State(state): State<AppState>,
-    Path(id): Path<u32>,
+    Path(id): Path<i64>,
+    Extension(user_id_str): Extension<String>,
 ) -> Result<StatusCode, AppError> {
-    tracing::info!("Deleting contact with id: {}", id);
+    tracing::info!("Deleting contact with id: {} for user {}", id, user_id_str);
+    
+    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
 
-    let result = sqlx::query("DELETE FROM contacts WHERE id = ?")
+    let result = sqlx::query("DELETE FROM contacts WHERE id = ? AND user_id = ?")
         .bind(id)
+        .bind(user_id)
         .execute(&state.db_pool)
         .await;
 
@@ -227,7 +248,8 @@ async fn delete_contact(
             if execution_result.rows_affected() > 0 {
                 Ok(StatusCode::NO_CONTENT)
             } else {
-                Ok(StatusCode::NOT_FOUND)
+                // Use NotFound to prevent leaking information about which contacts exist
+                Err(AppError::NotFound)
             }
         }
         Err(e) => {

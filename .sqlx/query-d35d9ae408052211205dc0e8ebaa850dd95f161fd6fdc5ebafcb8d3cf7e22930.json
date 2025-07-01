@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n        INSERT INTO contacts (name, email, age, subscribed, contact_type)\n        VALUES (?, ?, ?, ?, ?)\n        RETURNING id, name, email, age, subscribed, contact_type;\n        ",
+  "query": "\n        INSERT INTO contacts (user_id, name, email, age, subscribed, contact_type)\n        VALUES (?, ?, ?, ?, ?, ?)\n        RETURNING id, name, email, age, subscribed, contact_type;\n        ",
   "describe": {
     "columns": [
       {
@@ -35,10 +35,10 @@
       }
     ],
     "parameters": {
-      "Right": 5
+      "Right": 6
     },
     "nullable": [
-      false,
+      true,
       false,
       false,
       false,
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "3386b6bbeb7d38223995a649ff3906eeb3725c324199bb949d40ba7faeb02f03"
+  "hash": "d35d9ae408052211205dc0e8ebaa850dd95f161fd6fdc5ebafcb8d3cf7e22930"
 }
