@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, name, email, age, subscribed, contact_type FROM contacts",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "email",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "age",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "subscribed",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "contact_type",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2983c391d99ec62280021649943d6ac3586ecf9777670eef6b087bb8ff7ba26a"
+}

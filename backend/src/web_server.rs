@@ -1,20 +1,26 @@
-// --- File: backend/src/web_server.rs ---
-
 use axum::{
     debug_handler,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
-    routing::{get, get_service, post, put, delete},
     middleware,
+    routing::{delete, get, get_service, post, put},
     Json, Router,
 };
+
 use common::ContactDto; // Assuming Contact is not directly used for serde
-use std::{net::SocketAddr, sync::{Arc, Mutex}};
-use tower_http::services::ServeDir;
-use tracing;
 use sqlx::SqlitePool;
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+};
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
+use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tracing;
+use validator::Validate;
 
 use crate::auth;
+use crate::error::AppError;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -22,25 +28,15 @@ pub struct AppState {
     pub jwt_secret: String,
 }
 
-pub async fn run_server(app_state: AppState) {
-    let app = create_router(app_state);
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-    tracing::info!("Serving frontend and API at http://{}", addr);
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
-}
-
 pub fn create_router(app_state: AppState) -> Router {
-    let static_file_service = get_service(ServeDir::new("backend/static")).handle_error(|error| async move {
-        tracing::error!("Failed to serve static file: {}", error);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to serve static file: {}", error),
-        )
-
-    });
+    let static_file_service =
+        get_service(ServeDir::new("backend/static")).handle_error(|error| async move {
+            tracing::error!("Failed to serve static file: {}", error);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to serve static file: {}", error),
+            )
+        });
 
     // New auth routes
     let auth_routes = Router::new()
@@ -50,20 +46,29 @@ pub fn create_router(app_state: AppState) -> Router {
     // Existing contact routes (will be protected later)
     let contact_routes = Router::new()
         .route("/contacts", get(get_contacts).post(create_contact))
-        .route("/contacts/{id}", get(get_contact).put(update_contact).delete(delete_contact))
+        .route(
+            "/contacts/{id}",
+            get(get_contact).put(update_contact).delete(delete_contact),
+        )
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
             crate::auth::auth_middleware,
         ));
-    
+
+    let cors = CorsLayer::new()
+        .allow_origin(Any) // Or be more restrictive: .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
+        .allow_methods(Any) // Or specify: [Method::GET, Method::POST, ...]
+        .allow_headers(Any); // Or specify: [header::CONTENT_TYPE, header::AUTHORIZATION]
+
     Router::new()
-        .nest("/api", 
+        .nest(
+            "/api/v1",
             // Combine auth and contact routes
-            auth_routes.merge(contact_routes)
+            auth_routes.merge(contact_routes),
         )
         .with_state(app_state) // Provide state to all nested routes
         .fallback_service(static_file_service)
-
+        .layer(cors)
 }
 
 // --- API Handlers ---
@@ -72,9 +77,12 @@ pub fn create_router(app_state: AppState) -> Router {
 async fn create_contact(
     State(state): State<AppState>,
     Json(new_contact_dto): Json<ContactDto>,
-) -> Result<(StatusCode, Json<ContactDto>), StatusCode> {
+) -> Result<(StatusCode, Json<ContactDto>), AppError> {
     tracing::info!("Creating contact: {:?}", new_contact_dto);
-    
+
+    // Validate the new contact DTO
+    new_contact_dto.validate()?;
+
     let result = sqlx::query_as!(
         ContactDto,
         r#"
@@ -95,19 +103,20 @@ async fn create_contact(
         Ok(created_contact) => Ok((StatusCode::CREATED, Json(created_contact))),
         Err(e) => {
             tracing::error!("Failed to create contact: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(AppError::InternalServerError(
+                "Failed to create contact".to_string(),
+            ))
         }
     }
 }
-
 
 #[debug_handler]
 async fn get_contact(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-) -> Result<Json<ContactDto>, StatusCode> {
+) -> Result<Json<ContactDto>, AppError> {
     tracing::info!("Fetching single contact with id: {}", id);
-    
+
     let result = sqlx::query_as!(
         ContactDto,
         "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE id = ?",
@@ -118,10 +127,12 @@ async fn get_contact(
 
     match result {
         Ok(Some(contact)) => Ok(Json(contact)),
-        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Ok(None) => Err(AppError::NotFound),
         Err(e) => {
             tracing::error!("Failed to fetch contact: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(AppError::InternalServerError(
+                "Failed to fetch contact".to_string(),
+            ))
         }
     }
 }
@@ -129,9 +140,16 @@ async fn get_contact(
 #[debug_handler]
 async fn get_contacts(
     State(state): State<AppState>,
-) -> Result<Json<Vec<ContactDto>>, StatusCode> {
-    tracing::info!("Fetching all contacts from database");
-    
+    Extension(user_id): Extension<String>,
+) -> Result<Json<Vec<ContactDto>>, AppError> {
+
+    // Now you have the user's ID and can use it in your logic.
+    // The type `String` must match exactly what you inserted in the middleware.
+    tracing::info!(
+        "Fetching all contacts from database for user_id: {}",
+        user_id
+    );
+
     let result = sqlx::query_as!(
         ContactDto,
         "SELECT id, name, email, age, subscribed, contact_type FROM contacts"
@@ -143,7 +161,9 @@ async fn get_contacts(
         Ok(contacts) => Ok(Json(contacts)),
         Err(e) => {
             tracing::error!("Failed to fetch contacts: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(AppError::InternalServerError(
+                "Failed to fetch contacts".to_string(),
+            ))
         }
     }
 }
@@ -153,9 +173,9 @@ async fn update_contact(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(updated_contact): Json<ContactDto>,
-) -> Result<Json<ContactDto>, StatusCode> {
+) -> Result<Json<ContactDto>, AppError> {
     tracing::info!("Updating contact with id: {}", id);
-    
+
     let result = sqlx::query(
         r#"
         UPDATE contacts
@@ -178,12 +198,14 @@ async fn update_contact(
                 // Return the updated data
                 Ok(Json(updated_contact))
             } else {
-                Err(StatusCode::NOT_FOUND)
+                Err(AppError::NotFound)
             }
         }
         Err(e) => {
             tracing::error!("Failed to update contact: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(AppError::InternalServerError(
+                "Failed to update contact".to_string(),
+            ))
         }
     }
 }
@@ -192,9 +214,9 @@ async fn update_contact(
 async fn delete_contact(
     State(state): State<AppState>,
     Path(id): Path<u32>,
-) -> StatusCode {
+) -> Result<StatusCode, AppError> {
     tracing::info!("Deleting contact with id: {}", id);
-    
+
     let result = sqlx::query("DELETE FROM contacts WHERE id = ?")
         .bind(id)
         .execute(&state.db_pool)
@@ -203,14 +225,16 @@ async fn delete_contact(
     match result {
         Ok(execution_result) => {
             if execution_result.rows_affected() > 0 {
-                StatusCode::NO_CONTENT
+                Ok(StatusCode::NO_CONTENT)
             } else {
-                StatusCode::NOT_FOUND
+                Ok(StatusCode::NOT_FOUND)
             }
         }
         Err(e) => {
             tracing::error!("Failed to delete contact: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            Err(AppError::InternalServerError(
+                "Failed to delete contact".to_string(),
+            ))
         }
     }
 }

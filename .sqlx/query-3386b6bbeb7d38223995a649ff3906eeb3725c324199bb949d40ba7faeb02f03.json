@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO contacts (name, email, age, subscribed, contact_type)\n        VALUES (?, ?, ?, ?, ?)\n        RETURNING id, name, email, age, subscribed, contact_type;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "email",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "age",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "subscribed",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "contact_type",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3386b6bbeb7d38223995a649ff3906eeb3725c324199bb949d40ba7faeb02f03"
+}

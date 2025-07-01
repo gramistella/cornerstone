@@ -2,12 +2,14 @@
 
 slint::include_modules!();
 
-use slint::{Model, VecModel};
-use std::rc::Rc;
-use std::sync::Arc;
 use common::ContactDto; // Use the DTO for backend communication
 use common::Credentials;
 use common::LoginResponse;
+use slint::{Model, VecModel};
+use std::rc::Rc;
+use std::sync::Arc;
+
+use tracing;
 
 // Helper to spawn async tasks differently for native and wasm
 fn spawn_local<F: std::future::Future<Output = ()> + 'static>(fut: F) {
@@ -46,7 +48,6 @@ impl From<ContactDto> for Contact {
     }
 }
 
-
 pub fn run() {
     // For native builds, we need a tokio runtime.
     #[cfg(not(target_arch = "wasm32"))]
@@ -56,7 +57,7 @@ pub fn run() {
 
     // We'll use a single reqwest client for all requests.
     let client: Arc<reqwest::Client> = Arc::new(reqwest::Client::new());
-    let base_url = "http://127.0.0.1:8080/api";
+    let base_url = "http://127.0.0.1:8080/api/v1";
 
     let app_weak = app.as_weak();
     let client_clone = client.clone();
@@ -73,6 +74,7 @@ pub fn run() {
         spawn_local(async move {
             match client.post(&url).json(&credentials).send().await {
                 Ok(response) => {
+                    tracing::info!("Login response: {:?}", response);
                     if response.status().is_success() {
                         if let Ok(login_response) = response.json::<LoginResponse>().await {
                             let token = login_response.token;
@@ -80,17 +82,20 @@ pub fn run() {
                                 app_weak.unwrap().set_auth_token(token.into());
                                 // Fetch contacts after successful login
                                 //app_weak.unwrap().invoke_fetch_contacts();
-                            }).unwrap();
+                            })
+                            .unwrap();
                         } else {
-                            println!("Failed to parse login response");
+                            tracing::error!("Failed to parse login response");
                         }
                     } else {
                         let error_msg = response.text().await.unwrap_or_default();
-                        println!("Login failed: {}", error_msg);
+                        tracing::error!("Login failed: {}", error_msg);
                         // Here you could show an error message in the UI
                     }
-                },
-                Err(e) => println!("Error during login request: {}", e),
+                }
+                Err(e) => {
+                    tracing::error!("Error during login request: {}", e);
+                }
             }
         });
     });
@@ -104,7 +109,7 @@ pub fn run() {
             email: email.to_string(),
             password: password.to_string(),
         };
-        
+
         spawn_local(async move {
             match client.post(&url).json(&credentials).send().await {
                 Ok(response) => {
@@ -112,10 +117,10 @@ pub fn run() {
                         println!("Registration successful! Please log in.");
                         // Here you could show a success message in the UI
                     } else {
-                         let error_msg = response.text().await.unwrap_or_default();
-                         println!("Registration failed: {}", error_msg);
+                        let error_msg = response.text().await.unwrap_or_default();
+                        println!("Registration failed: {}", error_msg);
                     }
-                },
+                }
                 Err(e) => println!("Error during registration request: {}", e),
             }
         });
@@ -144,7 +149,8 @@ pub fn run() {
                 Ok(response) => {
                     if let Ok(contacts_dto) = response.json::<Vec<ContactDto>>().await {
                         // This data is `Send` and can be moved across threads.
-                        let ui_contacts: Vec<Contact> = contacts_dto.into_iter().map(Into::into).collect();
+                        let ui_contacts: Vec<Contact> =
+                            contacts_dto.into_iter().map(Into::into).collect();
 
                         // Post a task to the Slint event loop to update the UI.
                         // The `move` captures `ui_contacts` and `app_weak`.
@@ -169,7 +175,6 @@ pub fn run() {
         });
     });
 
-
     // --- Callback for adding a new contact ---
     let app_weak = app.as_weak();
     let base_url_clone = base_url.to_string();
@@ -193,7 +198,14 @@ pub fn run() {
 
         spawn_local(async move {
             println!("Sending new contact to backend...");
-            match client.clone().post(&url).bearer_auth(token).json(&new_contact).send().await {
+            match client
+                .clone()
+                .post(&url)
+                .bearer_auth(token)
+                .json(&new_contact)
+                .send()
+                .await
+            {
                 Ok(_) => {
                     println!("Successfully added contact. Refreshing list...");
                     // After adding, trigger a fetch to refresh the list
@@ -219,7 +231,13 @@ pub fn run() {
         let contact_dto: ContactDto = contact_to_update.to_dto();
         let token = app_weak.unwrap().get_auth_token().to_string();
         spawn_local(async move {
-            match client.put(&url).bearer_auth(token).json(&contact_dto).send().await {
+            match client
+                .put(&url)
+                .bearer_auth(token)
+                .json(&contact_dto)
+                .send()
+                .await
+            {
                 Ok(_) => {
                     println!("Successfully updated contact. Refreshing list...");
                     let _ = slint::invoke_from_event_loop(move || {
@@ -268,7 +286,7 @@ pub fn run() {
                     if let Ok(contact_dto) = response.json::<ContactDto>().await {
                         // Convert DTO to a slint::Contact struct
                         let ui_contact: Contact = contact_dto.into();
-                        
+
                         // Update the UI on the main thread
                         let _ = slint::invoke_from_event_loop(move || {
                             app_weak.unwrap().set_contact_to_edit(ui_contact);
@@ -286,6 +304,6 @@ pub fn run() {
 
     // Initial fetch of contacts
     //app.invoke_fetch_contacts();
-    
+
     app.run().unwrap();
 }

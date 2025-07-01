@@ -14,6 +14,16 @@ check:
     @echo "✅ Checking workspace for errors..."
     @cargo check --workspace
 
+# Lint the workspace for style and correctness issues
+lint:
+    @echo "🔎 Linting workspace with Clippy..."
+    @cargo clippy --workspace --all-targets -- -D warnings
+
+# Check all SQL queries against the running database at compile time
+db-prepare:
+    @echo "🗄️ Preparing SQLx queries..."
+    @cargo sqlx prepare --workspace -- --all-targets
+
 # Build a specific package by name.
 # USAGE: just build backend | just build frontend | just build common
 build package:
@@ -115,3 +125,8 @@ clean:
 distclean: clean
     @echo "🔥 Removing database file..."
     @rm -f backend/database.db
+
+# Format all Rust code in the workspace
+fmt:
+    @echo "💅 Formatting all Rust code..."
+    @cargo fmt --all

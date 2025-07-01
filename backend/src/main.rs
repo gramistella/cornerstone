@@ -1,13 +1,45 @@
 // --- File: backend/src/main.rs ---
 
 // Use the library part of the `backend` crate instead of a local module.
-use backend::web_server::{run_server, AppState};
+use backend::web_server::AppState;
+use common::{utils::is_valid_email, ContactDto};
 use dotenvy::dotenv;
 use sqlx::sqlite::SqlitePoolOptions;
-use common::{utils::is_valid_email, ContactDto};
+use std::env;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use std::env;
+
+mod config;
+use config::AppConfig;
+
+use tokio::signal;
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
+}
 
 #[tokio::main]
 async fn main() {
@@ -17,23 +49,24 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .with(tracing_subscriber::filter::LevelFilter::INFO) // This sets the minimum level to INFO
         .init();
-    
-    dotenv().unwrap();
 
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let config = AppConfig::from_env().expect("Failed to load configuration");
 
     let db_pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&db_url)
-        .await.unwrap();
+        .connect(&config.database.url)
+        .await
+        .unwrap();
 
     tracing::info!("Running database migrations...");
     sqlx::migrate!("./migrations").run(&db_pool).await.ok();
     tracing::info!("Migrations complete.");
 
-    let app_state = AppState { db_pool, jwt_secret };
-    
+    let app_state = AppState {
+        db_pool,
+        jwt_secret: config.jwt_secret,
+    };
+
     // 2. Initialize application state (e.g., in-memory DB)
     let initial_contacts: Vec<ContactDto> = vec![
         ContactDto {
@@ -57,5 +90,18 @@ async fn main() {
     // --- Run Server ---
     // 3. Start the web server and pass it the state
     tracing::info!("Initializing server...");
-    run_server(app_state).await;
+    let app = backend::web_server::create_router(app_state.clone());
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    tracing::info!("Serving frontend and API at http://{}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+
+    // This code runs after the server has stopped accepting new connections
+    tracing::info!("Server shut down gracefully. Closing database connections.");
+    app_state.db_pool.close().await;
+    tracing::info!("Database pool closed.");
 }

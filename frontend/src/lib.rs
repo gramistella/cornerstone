@@ -1,6 +1,5 @@
 pub mod runner;
 
-
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -9,4 +8,3 @@ use wasm_bindgen::prelude::*;
 pub fn start_wasm() {
     runner::run();
 }
-

@@ -1,0 +1,2 @@
+[database]
+url = "sqlite:backend/database.db"

@@ -7,9 +7,9 @@ fn main() {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
+    use console_error_panic_hook;
     use wasm_bindgen::prelude::*;
     use wasm_bindgen_futures::spawn_local;
-    use console_error_panic_hook;
 
     #[wasm_bindgen(start)]
     pub fn main() {

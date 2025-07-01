@@ -32,5 +32,5 @@ release/
 # Justfile local config
 .justfile.local
 
-# Environment variables
+# Secret config
 .env

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
 slint = { version = "1.12.1", features = ["serde"] }
+validator = { version = "0.18.1", features = ["derive"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 sqlx = { version = "0.8.0", default-features = false, features = ["macros", "sqlite"] }

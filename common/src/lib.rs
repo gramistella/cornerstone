@@ -1,24 +1,30 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[cfg(not(target_arch = "wasm32"))]
 use sqlx::FromRow;
-
+use validator::Validate; 
 pub mod utils;
 
 #[cfg_attr(not(target_arch = "wasm32"), derive(FromRow))]
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)] // Added Debug and PartialEq for convenience
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Validate)] 
 pub struct ContactDto {
-    pub id: Option<i64>, 
+    pub id: Option<i64>,
+    #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: String,
+    #[validate(email(message = "Email must be a valid email address"))]
     pub email: String,
-    pub age: i64,       // Added age
-    pub subscribed: bool, // Added subscribed
-    pub contact_type: String, // Added contact_type
+    #[validate(range(min = 0, max = 120))]
+    pub age: i64,             
+    pub subscribed: bool,     
+    #[validate(length(min = 1, message = "Contact type cannot be empty"))]
+    pub contact_type: String, 
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Validate)]
 pub struct Credentials {
+    #[validate(email)]
     pub email: String,
+    #[validate(length(min = 8, message = "Password must be at least 8 characters"))]
     pub password: String,
 }
 
