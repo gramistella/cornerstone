@@ -3,13 +3,27 @@ name = "common"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "type-exporter"
+path = "src/bin/type_exporter.rs"
+required-features = ["ts_export"] # This binary only works when the feature is enabled
+
+
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
 slint = { version = "1.12.1", features = ["serde"] }
 validator = { version = "0.18.1", features = ["derive"] }
+
+# ts-rs as an optional dependency
+ts-rs = { version = "11.0.1", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 sqlx = { version = "0.8.0", default-features = false, features = ["macros", "sqlite"] }
 
 [build-dependencies]
 slint-build = "1.12.1"
+
+# Define the feature that enables ts-rs
+[features]
+default = ["ts_export"]
+ts_export = ["dep:ts-rs"]
