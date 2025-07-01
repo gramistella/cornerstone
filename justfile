@@ -43,11 +43,15 @@ build-frontend:
 build-backend:
     @just build "backend"
 
-# NEW: Build the frontend for WebAssembly using wasm-pack.
+# Build the frontend for WebAssembly using wasm-pack.
 # This creates the necessary .js and .wasm files in the frontend/pkg directory.
 build-wasm:
+    @echo "🧹 Cleaning wasm-pack output folder (keeping .gitkeep)..."
+    @find frontend/static/wasm-pack -type f ! -name '.gitkeep' -delete
+    @find frontend/static/wasm-pack -type d -empty -not -path 'frontend/static/wasm-pack' -delete
     @echo "📦 Building WebAssembly frontend..."
     @cd frontend && wasm-pack build --target web --out-dir static/wasm-pack
+    @rm -f frontend/static/wasm-pack/.gitignore
 
 # -----------------------------------------------------------------------------
 # # Test Commands
@@ -89,7 +93,7 @@ db-migrate:
 copy-frontend:
     @echo "-  Copying frontend files to backend/static/..."
     @mkdir -p backend/static/wasm
-    @cp -r frontend/static/wasm-pack/* backend/static/wasm/
+    @rsync -av --exclude='.gitkeep' frontend/static/wasm-pack/ backend/static/wasm/
     @echo "   ...done"
 
 # Build and run the backend server.
@@ -118,7 +122,11 @@ watch:
 # Clean build artifacts by removing the `target` directory.
 clean:
     @echo "🧹 Cleaning build artifacts..."
-    @rm -rf ./target ./frontend/static/wasm-pack ./backend/static/wasm 
+    @rm -rf ./target
+    @find ./frontend/static/wasm-pack -type f ! -name '.gitkeep' -delete
+    @find ./frontend/static/wasm-pack -type d -empty -not -path './frontend/static/wasm-pack' -delete
+    @find ./backend/static/wasm -type f ! -name '.gitkeep' -delete
+    @find ./backend/static/wasm -type d -empty -not -path './backend/static/wasm' -delete
 
 # Remove all build artifacts AND the development database.
 # DANGER: This is destructive and will delete your local database file.
