@@ -7,8 +7,8 @@
 
 
 # WASM / Static build artifacts
-/frontend/static/wasm-pack/*
-!/frontend/static/wasm-pack/.gitkeep
+/frontend_slint/static/wasm-pack/*
+!/frontend_slint/static/wasm-pack/.gitkeep
 /backend/static/wasm/*
 !/backend/static/wasm/.gitkeep
 
