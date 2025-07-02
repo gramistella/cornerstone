@@ -22,29 +22,57 @@ use validator::Validate;
 use crate::auth;
 use crate::error::AppError;
 
+use tower_http::services::ServeFile;
+
+use axum::response::Redirect;
+
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: SqlitePool,
     pub jwt_secret: String,
 }
 
+fn create_static_router() -> Router<AppState> {
+    // This will cause a compilation error if neither `svelte-ui` nor `slint-ui` feature is enabled.
+    #[cfg(not(any(feature = "svelte-ui", feature = "slint-ui")))]
+    compile_error!("You must enable either the 'svelte-ui' or 'slint-ui' feature.");
+
+    // This code block will only be included if the `svelte-ui` feature is enabled
+    #[cfg(feature = "svelte-ui")]
+    let static_service = get_service(
+        ServeDir::new("backend/static/svelte-build").not_found_service(ServeFile::new(
+            "backend/static/svelte-build/index.html",
+        )),
+    )
+    .handle_error(|error| async move {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to serve Svelte app: {}", error),
+        )
+    });
+
+    // This code block will only be included if the `slint-ui` feature is enabled
+    #[cfg(feature = "slint-ui")]
+    let static_service = get_service(
+        ServeDir::new("backend/static/slint-build").not_found_service(ServeFile::new(
+            "backend/static/slint-build/index.html",
+        )),
+    )
+    .handle_error(|error| async move {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to serve Slint app: {}", error),
+        )
+    });
+
+    Router::new().fallback_service(static_service)
+}
+
 pub fn create_router(app_state: AppState) -> Router {
-    let static_file_service =
-        get_service(ServeDir::new("backend/static")).handle_error(|error| async move {
-            tracing::error!("Failed to serve static file: {}", error);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to serve static file: {}", error),
-            )
-        });
-
-    // New auth routes
-    let auth_routes = Router::new()
+    // API routes
+    let api_routes = Router::new()
         .route("/register", post(auth::register))
-        .route("/login", post(auth::login));
-
-    // Existing contact routes (will be protected later)
-    let contact_routes = Router::new()
+        .route("/login", post(auth::login))
         .route("/contacts", get(get_contacts).post(create_contact))
         .route(
             "/contacts/{id}",
@@ -52,22 +80,20 @@ pub fn create_router(app_state: AppState) -> Router {
         )
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
-            crate::auth::auth_middleware,
+            auth::auth_middleware,
         ));
 
     let cors = CorsLayer::new()
-        .allow_origin(Any) // Or be more restrictive: .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
-        .allow_methods(Any) // Or specify: [Method::GET, Method::POST, ...]
-        .allow_headers(Any); // Or specify: [header::CONTENT_TYPE, header::AUTHORIZATION]
-
+        .allow_origin(Any) // Or be more restrictive
+        .allow_methods(Any)
+        .allow_headers(Any);
+    
+    // Combine the API routes with the conditionally compiled static file router
     Router::new()
-        .nest(
-            "/api/v1",
-            // Combine auth and contact routes
-            auth_routes.merge(contact_routes),
-        )
-        .with_state(app_state) // Provide state to all nested routes
-        .fallback_service(static_file_service)
+        .nest("/api/v1", api_routes)
+        .merge(create_static_router()) // Use the new function here
+        .with_state(app_state)
+        .layer(TraceLayer::new_for_http())
         .layer(cors)
 }
 

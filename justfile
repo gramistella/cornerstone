@@ -12,7 +12,6 @@ default: check
 # -----------------------------------------------------------------------------
 
 # Check the entire workspace for errors without a full build.
-# This is the fastest way to see if your code compiles.
 check:
     @echo "✅ Checking workspace for errors..."
     @cargo check --workspace
@@ -33,22 +32,18 @@ build package:
     @echo "📦 Building package: '{{package}}'..."
     @cargo build -p {{package}}
 
-# Build all packages in the workspace.
-build-all: build-backend build-wasm
-    @echo "📦 Building all workspace packages..."
-
-# Convenience alias to build only the frontend.
-# Useful for updating Slint macro expansions for rust-analyzer.
-build-frontend-slint:
-    @just build "frontend-slint"
-
 # Convenience alias to build only the backend.
 build-backend:
     @just build "backend"
 
-# Build the frontend for WebAssembly using wasm-pack.
-# This creates the necessary .js and .wasm files in the frontend/pkg directory.
-build-wasm:
+# Build the SvelteKit frontend for web.
+build-svelte:
+    @echo "📦 Building SvelteKit frontend..."
+    @cd frontend_svelte && npm install && npm run build
+    @echo "  -> SvelteKit build complete."
+
+# Build the Slint frontend for WebAssembly using wasm-pack.
+build-slint:
     @echo "🧹 Cleaning wasm-pack output folder (keeping .gitkeep)..."
     @find frontend_slint/static/wasm-pack -type f ! -name '.gitkeep' -delete
     @find frontend_slint/static/wasm-pack -type d -empty -not -path 'frontend_slint/static/wasm-pack' -delete
@@ -56,6 +51,11 @@ build-wasm:
     @cd frontend_slint && wasm-pack build --target web --out-dir static/wasm-pack
     @rm -f frontend_slint/static/wasm-pack/.gitignore
 
+# Build all packages in the workspace (both Rust and frontend projects)
+build-all: build-backend build-svelte build-slint
+    @echo "📦 Building all workspace packages..."
+
+# Generate TypeScript types from Rust structs.
 gen-types:
     @echo "TypeScript: Generating type definitions..."
     # Run the `type-exporter` binary from the `common` crate,
@@ -96,60 +96,6 @@ db-migrate:
     @echo "🗄️ Running database migrations..."
     @sqlx migrate run --database-url 'sqlite:backend/database.db' --source backend/migrations
 
-# -----------------------------------------------------------------------------
-# # Deployment & Execution Commands
-# -----------------------------------------------------------------------------
-
-# NEW: Copy the built WASM app to the backend's static directory.
-copy-frontend:
-    @echo "-  Copying frontend files to backend/static/..."
-    @mkdir -p backend/static/wasm
-    @rsync -av --exclude='.gitkeep' frontend_slint/static/wasm-pack/ backend/static/wasm/
-    @echo "   ...done"
-
-# Build and run the backend server.
-run-backend: build-backend
-    @echo "🚀 Starting backend server..."
-    @cargo run -p backend
-
-# Build both frontend and backend, copy assets, and then run the server.
-run-web: build-wasm copy-frontend run-backend
-
-# -----------------------------------------------------------------------------
-# # Development Workflow Commands
-# -----------------------------------------------------------------------------
-
-# Watch for file changes in relevant crates and automatically rebuild & restart.
-# This is great for rapid development.
-# NOTE: Requires `cargo-watch` (`cargo install cargo-watch`).
-watch:
-    @echo "👀 Watching for changes... (Backend will restart on save)"
-    @cargo watch -q -c -w backend -w common -w frontend_slint/src -w frontend_slint/ui -x "run-web"
-
-# -----------------------------------------------------------------------------
-# # Clean Commands
-# -----------------------------------------------------------------------------
-
-# Clean build artifacts by removing the `target` directory.
-clean:
-    @echo "🧹 Cleaning build artifacts..."
-    @rm -rf ./target
-    @find ./frontend_slint/static/wasm-pack -type f ! -name '.gitkeep' -delete
-    @find ./frontend_slint/static/wasm-pack -type d -empty -not -path './frontend_slint/static/wasm-pack' -delete
-    @find ./backend/static/wasm -type f ! -name '.gitkeep' -delete
-    @find ./backend/static/wasm -type d -empty -not -path './backend/static/wasm' -delete
-
-# Remove all build artifacts AND the development database.
-# DANGER: This is destructive and will delete your local database file.
-distclean: clean
-    @echo "🔥 Removing database file..."
-    @rm -f backend/database.db
-
-# Format all Rust code in the workspace
-fmt:
-    @echo "💅 Formatting all Rust code..."
-    @cargo fmt --all
-
 # DANGER: Deletes and recreates the database, then runs all migrations.
 # This will ask for confirmation before proceeding.
 [confirm("⚠️  This will DELETE the current database. Are you sure?")]
@@ -162,3 +108,98 @@ db-reset:
     @echo "  - Running migrations to recreate the database and schema..."
     @just db-migrate
     @echo "✨ Database reset complete."
+
+# -----------------------------------------------------------------------------
+# # Deployment & Execution Commands
+# -----------------------------------------------------------------------------
+
+# Copy the built frontend to the backend's static directory.
+copy-frontend frontend:
+    @echo "- Copying frontend files to backend/static/..."
+    @if [ "{{frontend}}" = "svelte" ]; then \
+        mkdir -p backend/static/svelte-build; \
+        find backend/static/svelte-build -mindepth 1 ! -name '.gitkeep' -exec rm -rf {} +; \
+        echo "  -> Copying SvelteKit build..."; \
+        cp -r frontend_svelte/build/* backend/static/svelte-build/; \
+    elif [ "{{frontend}}" = "slint" ]; then \
+        mkdir -p backend/static/slint-build/wasm; \
+        find backend/static/slint-build -mindepth 1 \
+            ! -name '.gitkeep' \
+            ! -name 'index.html' \
+            ! -path 'wasm/.gitkeep' \
+            -exec rm -rf {} +; \
+        echo "  -> Copying Slint WASM build..."; \
+        cp -r frontend_slint/static/wasm-pack/* backend/static/slint-build/wasm/; \
+    else \
+        echo "  -> Unknown frontend '{{frontend}}'. Aborting."; \
+        exit 1; \
+    fi
+    @echo "  ...done"
+
+
+# Build and run the specified frontend with the backend.
+# USAGE: just run-web svelte  OR  just run-web slint
+run-web frontend="svelte":
+    @just build-{{frontend}}
+    @just copy-frontend {{frontend}}
+    @just run-backend
+
+# Build and run just the backend server.
+run-backend: build-backend
+    @echo "🚀 Starting backend server..."
+    @cargo run -p backend
+
+# -----------------------------------------------------------------------------
+# # Development Workflow Commands
+# -----------------------------------------------------------------------------
+
+# Watch for file changes in relevant crates and automatically rebuild & restart.
+# This is great for rapid development.
+# NOTE: Requires `cargo-watch` (`cargo install cargo-watch`).
+watch-slint:
+    @echo "👀 Watching for changes... (Backend + Slint)"
+    @cargo watch -q -c \
+      -w backend \
+      -w common \
+      -w frontend_slint/src \
+      -w frontend_slint/ui \
+      -x "run-web slint"
+
+watch-svelte:
+    @echo "👀 Watching for changes... (Backend + SvelteKit)"
+    @echo "Note: The SvelteKit dev server runs separately. Run 'npm run dev' in the frontend_svelte directory."
+    @echo "This command will only watch and restart the backend."
+    @cargo watch -q -c -w backend -w common -x "run-backend"
+
+# -----------------------------------------------------------------------------
+# # Clean Commands
+# -----------------------------------------------------------------------------
+
+# Clean build artifacts by removing the `target` directory.
+clean:
+    @echo "🧹 Cleaning build artifacts..."
+    @rm -rf ./target
+    @rm -rf ./frontend_svelte/build
+    @find ./frontend_slint/static/wasm-pack -type f ! -name '.gitkeep' -delete
+    @find ./frontend_slint/static/wasm-pack -type d -empty -not -path './frontend_slint/static/wasm-pack' -delete
+
+    @echo "🧹 Cleaning SvelteKit build artifacts..."
+    @find ./backend/static/svelte-build -mindepth 1 ! -name '.gitkeep' -exec rm -rf {} +
+
+    @echo "🧹 Cleaning Slint build artifacts..."
+    @find ./backend/static/slint-build -mindepth 1 \
+        \( -path './backend/static/slint-build/wasm' -prune \) -o \
+        \( ! -name '.gitkeep' ! -name 'index.html' -exec rm -rf {} + \)
+
+    @find ./backend/static/slint-build/wasm -mindepth 1 ! -name '.gitkeep' -exec rm -rf {} +
+
+# Remove all build artifacts AND the development database.
+# DANGER: This is destructive and will delete your local database file.
+distclean: clean
+    @echo "🔥 Removing database file..."
+    @rm -f backend/database.db
+
+# Format all Rust code in the workspace
+fmt:
+    @echo "💅 Formatting all Rust code..."
+    @cargo fmt --all

@@ -9,8 +9,10 @@
 # WASM / Static build artifacts
 /frontend_slint/static/wasm-pack/*
 !/frontend_slint/static/wasm-pack/.gitkeep
-/backend/static/wasm/*
-!/backend/static/wasm/.gitkeep
+/backend/static/slint-build/wasm/*
+!/backend/static/slint-build/wasm/.gitkeep
+/backend/static/svelte-build/*
+!/backend/static/svelte-build/.gitkeep
 
 
 # Operating System files
@@ -36,3 +38,29 @@ release/
 
 # Secret config
 .env
+
+# Svelte
+
+/frontend_svelte/node_modules
+
+# Output
+/frontend_svelte/.output
+/frontend_svelte/.vercel
+/frontend_svelte/.netlify
+/frontend_svelte/.wrangler
+/frontend_svelte/.svelte-kit
+/frontend_svelte/build
+
+# OS
+/frontend_svelte/.DS_Store
+/frontend_svelte/Thumbs.db
+
+# Env
+/frontend_svelte/.env
+/frontend_svelte/.env.*
+!/frontend_svelte/.env.example
+!/frontend_svelte/.env.test
+
+# Vite
+/frontend_svelte/vite.config.js.timestamp-*
+/frontend_svelte/vite.config.ts.timestamp-*

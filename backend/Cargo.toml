@@ -24,6 +24,11 @@ once_cell = "1.21.3"
 figment = { version = "0.10.19", features = ["toml", "env"] }
 validator = { version = "0.18.1", features = ["derive"] } # Add this
 
+[features]
+default = ["svelte-ui"]
+svelte-ui = []
+slint-ui = []
+
 [lib]
 name = "backend"
 path = "src/lib.rs"
