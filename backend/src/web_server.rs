@@ -3,19 +3,15 @@ use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
     middleware,
-    routing::{delete, get, get_service, post, put},
+    routing::{get, get_service, post},
     Json, Router,
 };
 
 use common::ContactDto; // Assuming Contact is not directly used for serde
 use sqlx::SqlitePool;
-use std::{
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
-use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tower_http::trace::{TraceLayer};
 use tracing;
 use validator::Validate;
 
@@ -24,7 +20,6 @@ use crate::error::AppError;
 
 use tower_http::services::ServeFile;
 
-use axum::response::Redirect;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -32,7 +27,7 @@ pub struct AppState {
     pub jwt_secret: String,
 }
 
-fn create_static_router() -> Router<AppState> {
+fn create_static_router() -> Router {
     // This will cause a compilation error if neither `svelte-ui` nor `slint-ui` feature is enabled.
     #[cfg(not(any(feature = "svelte-ui", feature = "slint-ui")))]
     compile_error!("You must enable either the 'svelte-ui' or 'slint-ui' feature.");
@@ -69,34 +64,41 @@ fn create_static_router() -> Router<AppState> {
 }
 
 pub fn create_router(app_state: AppState) -> Router {
-    // API routes
-    let api_routes = Router::new()
+    // Public routes that do not require authentication
+    let public_routes = Router::new()
         .route("/register", post(auth::register))
-        .route("/login", post(auth::login))
+        .route("/login", post(auth::login));
+
+    // Protected routes that require authentication
+    let protected_routes = Router::new()
         .route("/contacts", get(get_contacts).post(create_contact))
         .route(
             "/contacts/{id}",
             get(get_contact).put(update_contact).delete(delete_contact),
         )
+        // Apply the middleware only to these protected routes
         .route_layer(middleware::from_fn_with_state(
             app_state.clone(),
             auth::auth_middleware,
         ));
 
+    // Combine public and protected routes under the /api/v1 prefix
+    let api_routes = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes);
+
     let cors = CorsLayer::new()
-        .allow_origin(Any) // Or be more restrictive
+        .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    
-    // Combine the API routes with the conditionally compiled static file router
+
     Router::new()
-        .nest("/api/v1", api_routes)
-        .merge(create_static_router()) // Use the new function here
+        .nest("/api/v1", api_routes) // Nest all API routes under /api/v1
+        .fallback_service(create_static_router())
         .with_state(app_state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
 }
-
 // --- API Handlers ---
 
 #[debug_handler]

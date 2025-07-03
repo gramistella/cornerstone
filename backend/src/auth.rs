@@ -50,7 +50,7 @@ pub async fn register(
         .map_err(|_| (AppError::InternalServerError("Database error".to_string())))?;
 
     if existing_user.is_some() {
-        return Err((AppError::Conflict("User with this email already exists".to_string())));
+        return Err(AppError::Conflict("User with this email already exists".to_string()));
     }
 
     // Hash the password

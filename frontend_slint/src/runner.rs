@@ -5,7 +5,7 @@ slint::include_modules!();
 use common::ContactDto; // Use the DTO for backend communication
 use common::Credentials;
 use common::LoginResponse;
-use slint::{Model, VecModel};
+use slint::{VecModel};
 use std::rc::Rc;
 use std::sync::Arc;
 

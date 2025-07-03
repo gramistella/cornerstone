@@ -137,21 +137,32 @@ copy-frontend frontend:
     @echo "  ...done"
 
 
-# Build and run the specified frontend with the backend.
-# USAGE: just run-web svelte  OR  just run-web slint
+# Build and run the specified frontend with the backend, or run in live-dev mode.
+# USAGE: just run-web svelte | just run-web slint | just run-web svelte-live
 run-web frontend="svelte":
-    @just build-{{frontend}}
-    @just copy-frontend {{frontend}}
-    @just run-backend
+    @if [ "{{frontend}}" = "svelte-live" ]; then \
+        echo "🚀 Starting backend and SvelteKit dev server in parallel..."; \
+        echo "  -> Backend API will be at http://localhost:8080"; \
+        echo "  -> Svelte dev server will be at http://localhost:5173"; \
+        cd frontend_svelte && npx concurrently --kill-others --names "svelte,backend" "npm run dev" "cd .. && just run-backend"; \
+    else \
+        echo "📦 Building and running with static frontend: {{frontend}}"; \
+        just build-{{frontend}}; \
+        just copy-frontend {{frontend}}; \
+        just run-backend; \
+    fi
+
 
 # Build and run just the backend server.
 run-backend: build-backend
     @echo "🚀 Starting backend server..."
     @cargo run -p backend
 
+
 # -----------------------------------------------------------------------------
 # # Development Workflow Commands
 # -----------------------------------------------------------------------------
+
 
 # Watch for file changes in relevant crates and automatically rebuild & restart.
 # This is great for rapid development.
