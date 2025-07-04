@@ -13,12 +13,13 @@ pub mod utils;
 #[cfg_attr(feature = "ts_export", derive(TS))] // Conditionally derive TS
 #[cfg_attr(feature = "ts_export", ts(export))] // Just 'export', not 'export_to'
 pub struct ContactDto {
+    #[cfg_attr(feature = "ts_export", ts(type = "number"))]
     pub id: Option<i64>,
     #[validate(length(min = 1, message = "Name cannot be empty"))]
     pub name: String,
     #[validate(email(message = "Email must be a valid email address"))]
     pub email: String,
-    #[validate(range(min = 0, max = 120))]
+    #[cfg_attr(feature = "ts_export", ts(type = "number"))]
     pub age: i64,
     pub subscribed: bool,
     #[validate(length(min = 1, message = "Contact type cannot be empty"))]
@@ -39,5 +40,6 @@ pub struct Credentials {
 #[cfg_attr(feature = "ts_export", derive(TS))]
 #[cfg_attr(feature = "ts_export", ts(export))]
 pub struct LoginResponse {
-    pub token: String,
+    pub access_token: String,
+    pub refresh_token: String,
 }

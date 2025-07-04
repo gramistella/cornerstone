@@ -1,6 +1,6 @@
 <script lang="ts">
     import { postApi } from '$lib/api';
-    import { token } from '$lib/auth';
+    import { tokens } from '$lib/auth';
     import { goto } from '$app/navigation';
 
     let email = '';
@@ -11,17 +11,18 @@
         errorMessage = '';
         try {
             const response = await postApi('login', { email, password });
-            if (response.token) {
-                token.set(response.token);
+            if (response.access_token) {
+                tokens.set({
+                    accessToken: response.access_token,
+                    refreshToken: response.refresh_token
+                }); // Changed
                 await goto('/contacts');
             }
         } catch (error) {
-            // --- MODIFICATION START ---
             // Let's get the detailed error message instead of a generic one.
             const err = error as Error;
             errorMessage = `Login Failed: ${err.message}`;
             console.error('Full login error details:', error);
-            // --- MODIFICATION END ---
         }
     }
 </script>

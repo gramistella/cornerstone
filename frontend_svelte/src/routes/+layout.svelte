@@ -1,21 +1,28 @@
 <script lang="ts">
 	import '../app.css';
-	import { token, getUserFromToken } from '$lib/auth';
+	import { tokens, getUserFromToken } from '$lib/auth'; // Changed
+	import { postApi } from '$lib/api'; // Import postApi for logout
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
 
 	let currentUser: { sub: string } | null = null;
-	let showNav = false; // For mobile menu
+	let showNav = false;
 
-	// Use a reactive statement to update currentUser whenever the token changes.
-	$: currentUser = getUserFromToken($token);
+	// Use a reactive statement to update currentUser whenever the access token changes.
+	$: currentUser = getUserFromToken($tokens?.accessToken ?? null); // Changed
 
-	function logout() {
-		token.set(null); // This will also remove it from localStorage
-		goto('/login');
+	async function logout() {
+		try {
+			await postApi('logout', {}); // Call the new logout endpoint
+		} catch (error) {
+			console.error('Logout failed, clearing tokens locally anyway.', error);
+		} finally {
+			tokens.set(null); // This will also remove it from localStorage
+			goto('/login');
+		}
 	}
 </script>
+
 
 <nav class="bg-gray-800 text-white p-4">
 	<div class="container mx-auto flex justify-between items-center">

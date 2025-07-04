@@ -19,7 +19,7 @@ use crate::auth;
 use crate::error::AppError;
 
 use tower_http::services::ServeFile;
-
+use tower_http::request_id::{MakeRequestUuid, SetRequestIdLayer};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -67,10 +67,12 @@ pub fn create_router(app_state: AppState) -> Router {
     // Public routes that do not require authentication
     let public_routes = Router::new()
         .route("/register", post(auth::register))
-        .route("/login", post(auth::login));
+        .route("/login", post(auth::login))
+        .route("/refresh", post(auth::refresh));
 
     // Protected routes that require authentication
     let protected_routes = Router::new()
+        .route("/logout", post(auth::logout))
         .route("/contacts", get(get_contacts).post(create_contact))
         .route(
             "/contacts/{id}",
@@ -96,8 +98,18 @@ pub fn create_router(app_state: AppState) -> Router {
         .nest("/api/v1", api_routes) // Nest all API routes under /api/v1
         .fallback_service(create_static_router())
         .with_state(app_state)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                // Add this layer to add a request ID to all traces
+                .make_span_with(tower_http::trace::DefaultMakeSpan::new().include_headers(true))
+                .on_response(tower_http::trace::DefaultOnResponse::new().include_headers(true))
+        )
+        .layer(SetRequestIdLayer::new(
+            "x-request-id".parse().unwrap(),
+            MakeRequestUuid,
+        )) // This line adds the request ID
         .layer(cors)
+
 }
 // --- API Handlers ---
 

@@ -4,17 +4,21 @@ use axum::{extract::State, http::StatusCode, Json};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use common::Credentials;
 use common::LoginResponse;
-use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use chrono::{Duration, Utc}; // Use chrono for time
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use rand::RngCore; // Import RngCore for random token generation
+use base64::engine::{general_purpose, Engine as _};
 
 use axum::{extract::Request, middleware::Next, response::Response};
 use axum_extra::{
     headers::{authorization::Bearer, Authorization},
     TypedHeader,
 };
-use jsonwebtoken::{decode, DecodingKey, Validation};
 
+use sha2::{Sha256, Digest};
 use crate::error::AppError;
 use crate::web_server::AppState;
 
@@ -31,6 +35,21 @@ pub struct User {
 pub struct Claims {
     pub sub: String, // Subject (user id)
     pub exp: usize,  // Expiration time
+}
+
+// --- NEW: Struct for the refresh token payload ---
+#[derive(Debug, Deserialize)]
+pub struct RefreshPayload {
+    pub refresh_token: String,
+}
+
+
+// --- Helper struct for reading the token from the database ---
+#[derive(sqlx::FromRow)]
+struct RefreshTokenRecord {
+    user_id: i64,
+    token_hash: String,
+    expires_at: chrono::NaiveDateTime,
 }
 
 // --- API Handlers ---
@@ -80,41 +99,54 @@ pub async fn login(
     Json(payload): Json<Credentials>,
 ) -> Result<Json<LoginResponse>, AppError> {
     tracing::info!("Logging in user with email: {}", payload.email);
-    // Find the user by email
     let user: User = sqlx::query_as("SELECT * FROM users WHERE email = ?")
         .bind(&payload.email)
         .fetch_optional(&state.db_pool)
-        .await
-        .map_err(|_| (AppError::InternalServerError("Database error".to_string())))?
-        .ok_or_else(|| (AppError::Unauthorized))?;
+        .await?
+        .ok_or(AppError::Unauthorized)?;
 
-    // Verify the password
-    let valid_password = verify(&payload.password, &user.password_hash)
-        .map_err(|_| (AppError::InternalServerError("Password verification error".to_string())))?;
-
-    if !valid_password {
+    if !verify(&payload.password, &user.password_hash)? {
         return Err(AppError::Unauthorized);
     }
 
-    // Create JWT claims
-    let now = SystemTime::now();
-    let duration_since_epoch = now.duration_since(UNIX_EPOCH).unwrap();
-    let expiration = duration_since_epoch.as_secs() + 3600; // Expires in 1 hour
-
-    let claims = Claims {
-        sub: user.id.to_string(),
-        exp: expiration as usize,
-    };
-
-    // Encode the token
-    let token = encode(
+    // --- Create short-lived access token (15 minutes) ---
+    let access_token_exp = (Utc::now() + Duration::minutes(15)).timestamp() as usize;
+    let access_claims = Claims { sub: user.id.to_string(), exp: access_token_exp };
+    let access_token = encode(
         &Header::default(),
-        &claims,
+        &access_claims,
         &EncodingKey::from_secret(state.jwt_secret.as_ref()),
-    )
-    .map_err(|_| (AppError::InternalServerError("Failed to create token".to_string())))?;
+    )?;
 
-    Ok(Json(LoginResponse { token }))
+    // --- Create long-lived refresh token (7 days) ---
+    let mut refresh_token_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut refresh_token_bytes);
+    let refresh_token = general_purpose::URL_SAFE_NO_PAD.encode(refresh_token_bytes);
+    
+    // --- Hash the refresh token using SHA-256 for DB lookup ---
+    let mut hasher = Sha256::new();
+    hasher.update(refresh_token.as_bytes());
+    let refresh_token_hash = hex::encode(hasher.finalize());
+    
+    let refresh_token_exp = Utc::now() + Duration::days(7);
+
+    // --- Store hashed refresh token in the database ---
+    // Use ON CONFLICT to update the token if the user is already logged in,
+    // effectively invalidating the old refresh token.
+    sqlx::query(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at",
+    )
+    .bind(user.id)
+    .bind(&refresh_token_hash)
+    .bind(refresh_token_exp)
+    .execute(&state.db_pool)
+    .await?;
+
+    Ok(Json(LoginResponse {
+        access_token,
+        refresh_token, // Return the unhashed refresh token to the client
+    }))
 }
 
 pub async fn auth_middleware(
@@ -146,4 +178,97 @@ pub async fn auth_middleware(
 
     // If the token is valid, we can proceed to the next middleware or the handler
     Ok(next.run(request).await)
+}
+
+// --- NEW: Refresh Token Handler ---
+pub async fn refresh(
+    State(state): State<AppState>,
+    Json(payload): Json<RefreshPayload>,
+) -> Result<Json<LoginResponse>, AppError> {
+    // 1. Hash the incoming refresh token to find it in the database.
+    let mut hasher = Sha256::new();
+    hasher.update(payload.refresh_token.as_bytes());
+    let incoming_token_hash = hex::encode(hasher.finalize());
+
+    // 2. Find the token in the database by its hash.
+    // NOTE: For performance, you should add a database index to the `token_hash` column.
+    let record: RefreshTokenRecord = sqlx::query_as(
+        "SELECT user_id, token_hash, expires_at FROM refresh_tokens WHERE token_hash = ?",
+    )
+    .bind(&incoming_token_hash)
+    .fetch_optional(&state.db_pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?; // If no such token, it's invalid.
+
+    // 3. Check if the database token has expired.
+    if record.expires_at < Utc::now().naive_utc() {
+        // As a cleanup, remove the expired token from the DB
+        sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = ?")
+            .bind(&incoming_token_hash)
+            .execute(&state.db_pool)
+            .await.ok(); // We don't care about the result of the cleanup
+        return Err(AppError::Unauthorized);
+    }
+
+    // --- All checks passed, we have a valid user. Now, rotate the tokens. ---
+    let user_id = record.user_id;
+
+    // 4. Issue a new short-lived access token.
+    let access_token_exp = (Utc::now() + Duration::minutes(15)).timestamp() as usize;
+    let access_claims = Claims {
+        sub: user_id.to_string(),
+        exp: access_token_exp,
+    };
+    let access_token = encode(
+        &Header::default(),
+        &access_claims,
+        &EncodingKey::from_secret(state.jwt_secret.as_ref()),
+    )?;
+
+    // 5. Issue a brand new long-lived refresh token (Token Rotation).
+    let mut new_refresh_token_bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut new_refresh_token_bytes);
+    let new_refresh_token = general_purpose::URL_SAFE_NO_PAD.encode(new_refresh_token_bytes);
+    
+    // Hash the new token for database storage
+    let mut new_hasher = Sha256::new();
+    new_hasher.update(new_refresh_token.as_bytes());
+    let new_refresh_token_hash = hex::encode(new_hasher.finalize());
+    let new_refresh_token_exp = (Utc::now() + Duration::days(7)).naive_utc();
+
+    // 6. Update the database with the new refresh token hash and expiry,
+    // replacing the one that was just used. This invalidates the old token.
+    sqlx::query(
+        "UPDATE refresh_tokens SET token_hash = ?, expires_at = ? WHERE user_id = ?",
+    )
+    .bind(&new_refresh_token_hash)
+    .bind(new_refresh_token_exp)
+    .bind(user_id)
+    .execute(&state.db_pool)
+    .await?;
+
+    // 7. Return the new pair of tokens to the client.
+    Ok(Json(LoginResponse {
+        access_token,
+        refresh_token: new_refresh_token, // This is the new, un-hashed refresh token.
+    }))
+}
+
+
+
+
+// --- NEW: Logout Handler ---
+pub async fn logout(
+    State(state): State<AppState>,
+    axum::Extension(user_id_str): axum::Extension<String>,
+) -> Result<StatusCode, AppError> {
+    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
+
+    // Simply delete the refresh token from the database
+    sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")
+        .bind(user_id)
+        .execute(&state.db_pool)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

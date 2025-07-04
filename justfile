@@ -61,8 +61,6 @@ gen-types:
     # Run the `type-exporter` binary from the `common` crate,
     # activating the `ts_export` feature which enables it.
     @cargo run -p common --features ts_export --bin type-exporter
-    # Optional: format the generated TS file
-    @npx prettier --write frontend_svelte/src/lib/types.ts
 
 # -----------------------------------------------------------------------------
 # # Test Commands
