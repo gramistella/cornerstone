@@ -1,25 +1,26 @@
 use axum::{
     debug_handler,
-    extract::{Extension, Path, State},
-    http::StatusCode,
-    middleware,
+    extract::{Path, State},
+    http::{header, HeaderValue, Method, StatusCode},
     routing::{get, get_service, post},
     Json, Router,
 };
 
-use common::ContactDto; // Assuming Contact is not directly used for serde
 use sqlx::SqlitePool;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
-use tower_http::trace::{TraceLayer};
+use tower_http::{
+    cors::CorsLayer,
+    request_id::{MakeRequestUuid, SetRequestIdLayer},
+    services::{ServeDir, ServeFile},
+    trace::TraceLayer,
+};
+
 use tracing;
 use validator::Validate;
 
 use crate::{auth, config::AppConfig};
 use crate::error::AppError;
-
-use tower_http::services::ServeFile;
-use tower_http::request_id::{MakeRequestUuid, SetRequestIdLayer};
+use crate::extractors::AuthUser;
+use common::ContactDto;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -77,12 +78,7 @@ pub fn create_router(app_state: AppState) -> Router {
         .route(
             "/contacts/{id}",
             get(get_contact).put(update_contact).delete(delete_contact),
-        )
-        // Apply the middleware only to these protected routes
-        .route_layer(middleware::from_fn_with_state(
-            app_state.clone(),
-            auth::auth_middleware,
-        ));
+        );
 
     // Combine public and protected routes under the /api/v1 prefix
     let api_routes = Router::new()
@@ -90,9 +86,25 @@ pub fn create_router(app_state: AppState) -> Router {
         .merge(protected_routes);
 
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(
+            app_state
+                .app_config
+                .web
+                .cors_origin
+                .parse::<HeaderValue>()
+                .expect("Invalid CORS_ORIGIN in config.toml"),
+        )
+        // It's good practice to be specific about allowed methods and headers
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        // This is required to allow the browser to send credentials (e.g., cookies, auth tokens)
+        .allow_credentials(true);
 
     Router::new()
         .nest("/api/v1", api_routes) // Nest all API routes under /api/v1
@@ -116,15 +128,13 @@ pub fn create_router(app_state: AppState) -> Router {
 #[debug_handler]
 async fn create_contact(
     State(state): State<AppState>,
-    Extension(user_id_str): Extension<String>,
+    user: AuthUser,
     Json(new_contact_dto): Json<ContactDto>,
 ) -> Result<(StatusCode, Json<ContactDto>), AppError> {
-    tracing::info!("Creating contact: {:?}, assigned to user {}", new_contact_dto, user_id_str);
+    tracing::info!("Creating contact: {:?}, assigned to user {}", new_contact_dto, user.id);
 
     // Validate the new contact DTO
     new_contact_dto.validate()?;
-
-    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
 
     let result = sqlx::query_as!(
         ContactDto,
@@ -133,7 +143,7 @@ async fn create_contact(
         VALUES (?, ?, ?, ?, ?, ?)
         RETURNING id, name, email, age, subscribed, contact_type;
         "#,
-        user_id, // Add the user_id here
+        user.id, // Add the user_id here
         new_contact_dto.name,
         new_contact_dto.email,
         new_contact_dto.age,
@@ -158,17 +168,15 @@ async fn create_contact(
 async fn get_contact(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-    Extension(user_id_str): Extension<String>,
+    user: AuthUser,
 ) -> Result<Json<ContactDto>, AppError> {
-    tracing::info!("Fetching single contact with id: {} for user {}", id, user_id_str);
-
-    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
+    tracing::info!("Fetching single contact with id: {} for user {}", id, user.id);
 
     let result = sqlx::query_as!(
         ContactDto,
         "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE id = ? AND user_id = ?",
         id,
-        user_id
+        user.id
     )
     .fetch_optional(&state.db_pool)
     .await;
@@ -188,22 +196,21 @@ async fn get_contact(
 #[debug_handler]
 async fn get_contacts(
     State(state): State<AppState>,
-    Extension(user_id_str): Extension<String>,
+    user: AuthUser,
 ) -> Result<Json<Vec<ContactDto>>, AppError> {
 
     // Now you have the user's ID and can use it in your logic.
     // The type `String` must match exactly what you inserted in the middleware.
     tracing::info!(
         "Fetching all contacts from database for user_id: {}",
-        user_id_str
+        user.id
     );
 
-    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
     
     let result = sqlx::query_as!(
         ContactDto,
         "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE user_id = ?",
-        user_id
+        user.id
     )
     .fetch_all(&state.db_pool)
     .await;
@@ -223,14 +230,13 @@ async fn get_contacts(
 async fn update_contact(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-    Extension(user_id_str): Extension<String>,
+    user: AuthUser,
     Json(updated_contact): Json<ContactDto>,
 ) -> Result<Json<ContactDto>, AppError> {
-    tracing::info!("Updating contact with id: {} for user {}", id, user_id_str);
+    tracing::info!("Updating contact with id: {} for user {}", id, user.id);
 
     updated_contact.validate()?;
     
-    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
 
     let result = sqlx::query(
         r#"
@@ -245,7 +251,7 @@ async fn update_contact(
     .bind(updated_contact.subscribed)
     .bind(&updated_contact.contact_type)
     .bind(id)
-    .bind(user_id)
+    .bind(user.id)
     .execute(&state.db_pool)
     .await;
 
@@ -271,15 +277,13 @@ async fn update_contact(
 async fn delete_contact(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-    Extension(user_id_str): Extension<String>,
+    user: AuthUser,
 ) -> Result<StatusCode, AppError> {
-    tracing::info!("Deleting contact with id: {} for user {}", id, user_id_str);
+    tracing::info!("Deleting contact with id: {} for user {}", id, user.id);
     
-    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
-
     let result = sqlx::query("DELETE FROM contacts WHERE id = ? AND user_id = ?")
         .bind(id)
-        .bind(user_id)
+        .bind(user.id)
         .execute(&state.db_pool)
         .await;
 

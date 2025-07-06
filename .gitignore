@@ -5,6 +5,8 @@
 # The lock file should be committed for reproducible builds, so we don't ignore it.
 # Cargo.lock
 
+# SQLite database files
+/backend/database.db*
 
 # WASM / Static build artifacts
 /frontend_slint/static/wasm-pack/*
