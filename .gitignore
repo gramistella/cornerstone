@@ -6,7 +6,9 @@
 # Cargo.lock
 
 # SQLite database files
-/backend/database.db*
+*.db
+*.db-shm
+*.db-wal
 
 # WASM / Static build artifacts
 /frontend_slint/static/wasm-pack/*
