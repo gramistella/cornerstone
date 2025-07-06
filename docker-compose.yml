@@ -1,0 +1,21 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount the database file to persist data between runs
+      - ./backend/database.db:/usr/src/app/backend/database.db
+    env_file:
+      - .env
+    environment:
+      # These non-secret variables will still override anything
+      # in Config.toml or .env, ensuring the container runs correctly.
+      - APP_WEB__ADDR=0.0.0.0
+      - APP_WEB__PORT=8080
+      - APP_DATABASE__URL=sqlite:/app/backend/database.db
+    # For live reload during development, you could add another service
+    # for the Svelte dev server and mount volumes, but this setup is for
+    # a production-like build.

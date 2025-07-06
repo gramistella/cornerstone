@@ -15,7 +15,7 @@ use tower_http::trace::{TraceLayer};
 use tracing;
 use validator::Validate;
 
-use crate::auth;
+use crate::{auth, config::AppConfig};
 use crate::error::AppError;
 
 use tower_http::services::ServeFile;
@@ -24,7 +24,7 @@ use tower_http::request_id::{MakeRequestUuid, SetRequestIdLayer};
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: SqlitePool,
-    pub jwt_secret: String,
+    pub app_config: AppConfig,
 }
 
 fn create_static_router() -> Router {

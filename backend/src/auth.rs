@@ -115,7 +115,7 @@ pub async fn login(
     let access_token = encode(
         &Header::default(),
         &access_claims,
-        &EncodingKey::from_secret(state.jwt_secret.as_ref()),
+        &EncodingKey::from_secret(state.app_config.jwt_secret.as_ref()),
     )?;
 
     // --- Create long-lived refresh token (7 days) ---
@@ -160,7 +160,7 @@ pub async fn auth_middleware(
     // Decode and validate the token
     let token_data = decode::<Claims>(
         auth_header.token(),
-        &DecodingKey::from_secret(state.jwt_secret.as_ref()),
+        &DecodingKey::from_secret(state.app_config.jwt_secret.as_ref()),
         &Validation::default(),
     )
     .map_err(|e| {
@@ -222,7 +222,7 @@ pub async fn refresh(
     let access_token = encode(
         &Header::default(),
         &access_claims,
-        &EncodingKey::from_secret(state.jwt_secret.as_ref()),
+        &EncodingKey::from_secret(state.app_config.jwt_secret.as_ref()),
     )?;
 
     // 5. Issue a brand new long-lived refresh token (Token Rotation).

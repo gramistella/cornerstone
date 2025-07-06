@@ -6,10 +6,11 @@ use sqlx::sqlite::SqlitePoolOptions;
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod config;
-use config::AppConfig;
+use backend::config::AppConfig;
 
 use tokio::signal;
+
+use std::net::IpAddr;
 
 async fn shutdown_signal() {
     let ctrl_c = async {
@@ -60,14 +61,18 @@ async fn main() {
 
     let app_state = AppState {
         db_pool,
-        jwt_secret: config.jwt_secret,
+        app_config: config.clone(),
     };
 
     // --- Run Server ---
     // 3. Start the web server and pass it the state
     tracing::info!("Initializing server...");
     let app = backend::web_server::create_router(app_state.clone());
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+
+    let ip_addr: IpAddr = config.web.addr.parse()
+    .expect("Invalid IP address in config");
+
+    let addr = SocketAddr::new(ip_addr, config.web.port);
     tracing::info!("Serving frontend and API at http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

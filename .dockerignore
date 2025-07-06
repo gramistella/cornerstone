@@ -1,0 +1,21 @@
+# Ignore build artifacts and caches
+target/
+**/target/
+frontend_svelte/build/
+frontend_svelte/.svelte-kit/
+backend/static/
+
+# Ignore local dependencies
+frontend_svelte/node_modules/
+
+# Ignore git and IDE files
+.git/
+.idea/
+.vscode/
+
+# Ignore the local database file
+backend/database.db
+backend/database.db-journal
+
+# Ignore environment files
+.env

@@ -1,2 +1,7 @@
 [database]
 url = "sqlite:backend/database.db"
+
+[web]
+addr = "127.0.0.1"
+port = 8080
+cors_origin = "http://localhost:5173"
