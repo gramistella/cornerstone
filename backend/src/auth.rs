@@ -21,7 +21,7 @@ use crate::error::AppError;
 use crate::extractors::AuthUser;
 use crate::web_server::AppState;
 use sha2::{Digest, Sha256};
-
+use utoipa::ToSchema;
 // --- User & Payload Structs ---
 
 #[derive(sqlx::FromRow, Debug)]
@@ -38,7 +38,7 @@ pub struct Claims {
 }
 
 // --- NEW: Struct for the refresh token payload ---
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct RefreshPayload {
     pub refresh_token: String,
 }
@@ -54,6 +54,16 @@ struct RefreshTokenRecord {
 
 /// ## Register a new user
 /// Takes email and password, hashes the password, and stores the user in the database.
+#[utoipa::path(
+    post,
+    path = "/api/v1/register",
+    request_body = Credentials,
+    responses(
+        (status = 201, description = "User created successfully"),
+        (status = 409, description = "User with this email already exists"),
+        (status = 422, description = "Invalid data provided"),
+    )
+)]
 pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<Credentials>,
@@ -94,6 +104,16 @@ pub async fn register(
 
 /// ## Login an existing user
 /// Takes email and password, verifies them, and returns a JWT if successful.
+#[utoipa::path(
+    post,
+    path = "/api/v1/login",
+    request_body = Credentials,
+    responses(
+        (status = 200, description = "Login successful", body = LoginResponse),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<Credentials>,
@@ -190,7 +210,16 @@ pub async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
-// --- NEW: Refresh Token Handler ---
+// --- Refresh Token Handler ---
+#[utoipa::path(
+    post,
+    path = "/api/v1/refresh",
+    request_body = RefreshPayload,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = LoginResponse),
+        (status = 401, description = "Invalid or expired refresh token")
+    )
+)]
 pub async fn refresh(
     State(state): State<AppState>,
     Json(payload): Json<RefreshPayload>,
@@ -263,18 +292,25 @@ pub async fn refresh(
     }))
 }
 
-// --- NEW: Logout Handler ---
+// --- Logout Handler ---
+#[utoipa::path(
+    post,
+    path = "/api/v1/logout",
+    security(
+        ("bearer_auth" = [])
+    ),
+    responses(
+        (status = 204, description = "Logout successful"),
+        (status = 401, description = "Authentication required")
+    )
+)]
 pub async fn logout(
     State(state): State<AppState>,
-    axum::Extension(user_id_str): axum::Extension<String>,
+    user: AuthUser,
 ) -> Result<StatusCode, AppError> {
-    let user_id: i64 = user_id_str
-        .parse()
-        .map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
-
     // Simply delete the refresh token from the database
     sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")
-        .bind(user_id)
+        .bind(user.id)
         .execute(&state.db_pool)
         .await?;
 

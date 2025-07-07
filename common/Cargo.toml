@@ -11,10 +11,13 @@ required-features = ["ts_export"] # This binary only works when the feature is e
 
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
 slint = { version = "1.12.1", features = ["serde"] }
-validator = { version = "0.18.1", features = ["derive"] }
+validator = { version = "0.20.0", features = ["derive"] }
+utoipa = { version = "5.4.0", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 
-# ts-rs as an optional dependency
+# ts-rs as an optional dependency for the svelte UI
 ts-rs = { version = "11.0.1", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -5,17 +5,34 @@ use axum::{
     Json,
 };
 use serde_json::json;
+use thiserror::Error;
 use validator::ValidationErrors;
 
 // Define a custom error type
+#[derive(Debug, Error)] 
 pub enum AppError {
+    #[error("Internal Server Error: {0}")]
     InternalServerError(String),
+    
+    #[error("Database error")]
     DatabaseError(sqlx::Error),
+
+    #[error("Authentication error")]
     JwtError(jsonwebtoken::errors::Error),
+
+    #[error("Authentication error")]
     PasswordError(bcrypt::BcryptError),
+
+    #[error("{0}")]
     Conflict(String),
+
+    #[error("Unauthorized")]
     Unauthorized,
+
+    #[error("Resource not found")]
     NotFound,
+
+    #[error("Validation error: {0}")]
     ValidationError(ValidationErrors),
 }
 

@@ -28,6 +28,36 @@ use common::ContactDto;
 
 use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+use common::Credentials;
+use common::LoginResponse;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        auth::register,
+        auth::login,
+        auth::refresh,
+        auth::logout,
+        get_contacts,
+        create_contact,
+        get_contact,
+    ),
+    // 👇 All components are now in a single block
+    components(
+        schemas(ContactDto, Credentials, LoginResponse),
+    ),
+    tags(
+        (name = "Cornerstone API", description = "Full-stack Rust template API")
+    ),
+    // This part remains the same, it *applies* the security scheme to the UI
+    security(
+        ("bearer_auth" = [])
+    )
+)]
+struct ApiDoc;
+
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: SqlitePool,
@@ -89,6 +119,7 @@ pub fn create_router(app_state: AppState) -> Router {
 
     // Public routes that do not require authentication
     let public_routes = Router::new()
+        .route("/health", get(health_check))
         .route("/register", post(auth::register))
         .route("/login", post(auth::login))
         .route("/refresh", post(auth::refresh))
@@ -134,7 +165,14 @@ pub fn create_router(app_state: AppState) -> Router {
         // This is required to allow the browser to send credentials (e.g., cookies, auth tokens)
         .allow_credentials(true);
 
-    Router::new()
+    let mut router = Router::new();
+
+    if cfg!(debug_assertions) {
+        tracing::info!("Debug mode: Enabling /docs endpoint");
+        router = router.merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()));
+    }
+
+    router
         .nest("/api/v1", api_routes) // Nest all API routes under /api/v1
         .fallback_service(create_static_router())
         .with_state(app_state)
@@ -152,6 +190,31 @@ pub fn create_router(app_state: AppState) -> Router {
 }
 // --- API Handlers ---
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/health",
+    responses(
+        (status = 200, description = "Service is healthy")
+    )
+)]
+#[debug_handler]
+async fn health_check() -> StatusCode {
+    StatusCode::OK
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/contacts",
+    request_body = ContactDto,
+    security(
+        ("bearer_auth" = [])
+    ),
+    responses(
+        (status = 201, description = "Contact created successfully", body = ContactDto),
+        (status = 401, description = "Authentication required"),
+        (status = 422, description = "Validation error"),
+    )
+)]
 #[debug_handler]
 async fn create_contact(
     State(state): State<AppState>,
@@ -195,6 +258,21 @@ async fn create_contact(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/contacts/{id}",
+    security(
+        ("bearer_auth" = [])
+    ),
+    params(
+        ("id" = i64, Path, description = "Contact ID")
+    ),
+    responses(
+        (status = 200, body = ContactDto),
+        (status = 404, description = "Contact not found"),
+        (status = 401, description = "Authentication required")
+    )
+)]
 #[debug_handler]
 async fn get_contact(
     State(state): State<AppState>,
@@ -234,6 +312,17 @@ pub struct Pagination {
     pub per_page: Option<u32>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/contacts",
+    security(
+        ("bearer_auth" = [])
+    ),
+    responses(
+        (status = 200, description = "List of contacts", body = Vec<ContactDto>),
+        (status = 401, description = "Authentication required")
+    )
+)]
 #[debug_handler]
 async fn get_contacts(
     State(state): State<AppState>,
