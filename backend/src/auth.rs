@@ -81,7 +81,7 @@ pub async fn register(
             "User with this email already exists".to_string(),
         ));
     }
-
+    
     // Hash the password
     let password_hash = hash(&payload.password, DEFAULT_COST).map_err(|e| {
         tracing::error!("Failed to hash password: {}", e);
@@ -151,7 +151,7 @@ pub async fn login(
     hasher.update(refresh_token.as_bytes());
     let refresh_token_hash = hex::encode(hasher.finalize());
 
-    let refresh_token_exp = Utc::now() + Duration::days(7);
+    let refresh_token_exp = (Utc::now() + Duration::days(7)).naive_utc();
 
     // --- Store hashed refresh token in the database ---
     // Use ON CONFLICT to update the token if the user is already logged in,
@@ -232,7 +232,7 @@ pub async fn refresh(
     // 2. Find the token in the database by its hash.
     // NOTE: For performance, you should add a database index to the `token_hash` column.
     let record: RefreshTokenRecord = sqlx::query_as(
-        "SELECT user_id, token_hash, expires_at FROM refresh_tokens WHERE token_hash = ?",
+        "SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?",
     )
     .bind(&incoming_token_hash)
     .fetch_optional(&state.db_pool)

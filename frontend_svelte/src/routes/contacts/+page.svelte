@@ -51,7 +51,7 @@
 							<td class="py-4 px-6">{contact.email}</td>
 							<td class="py-4 px-6">{contact.age}</td>
 							<td class="py-4 px-6">{contact.subscribed ? 'Yes' : 'No'}</td>
-							<td class="py-4 px-6">{contact.contact_type}</td>
+							<td class="py-4 px-6">{contact.contactType}</td>
 							<td class="py-4 px-6">
 								<a href="/contacts/{contact.id}" class="font-medium text-blue-600 hover:underline mr-3">Edit</a>
 								<button on:click={() => deleteContact(contact.id)} class="font-medium text-red-600 hover:underline">Delete</button>

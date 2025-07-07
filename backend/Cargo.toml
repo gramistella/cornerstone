@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 axum = { version = "0.8.4", features = ["macros"] }
 tokio = { version = "1.45.1", features = ["full", "rt-multi-thread"] }
-reqwest = "0.12.20"
+reqwest = { version = "0.12.20", features = ["json"] }
 chrono = "0.4.41"
 tower-http = { version = "0.6.6", features = ["fs", "cors", "trace", "request-id"] }
 common = { path = "../common" }
@@ -53,3 +53,4 @@ http-body-util = "0.1"
 serde_json = "1.0.140"
 # For the `ServiceExt::oneshot` testing utility
 tower = { version = "0.5.2", features = ["full"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }

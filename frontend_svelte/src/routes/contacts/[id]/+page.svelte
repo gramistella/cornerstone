@@ -42,7 +42,7 @@
 		</div>
         <div class="mb-4">
 			<label for="contactType" class="block text-gray-700">Contact Type</label>
-			<select id="contactType" bind:value={contact.contact_type} class="w-full px-3 py-2 border rounded">
+			<select id="contactType" bind:value={contact.contactType} class="w-full px-3 py-2 border rounded">
 				<option value="Personal">Personal</option>
 				<option value="Work">Work</option>
 				<option value="Other">Other</option>
