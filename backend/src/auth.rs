@@ -5,12 +5,11 @@ use bcrypt::{hash, verify, DEFAULT_COST};
 use common::Credentials;
 use common::LoginResponse;
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::engine::{general_purpose, Engine as _};
 use chrono::{Duration, Utc}; // Use chrono for time
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use rand::RngCore; // Import RngCore for random token generation
-use base64::engine::{general_purpose, Engine as _};
 
 use axum::{extract::Request, middleware::Next, response::Response};
 use axum_extra::{
@@ -18,9 +17,10 @@ use axum_extra::{
     TypedHeader,
 };
 
-use sha2::{Sha256, Digest};
 use crate::error::AppError;
+use crate::extractors::AuthUser;
 use crate::web_server::AppState;
+use sha2::{Digest, Sha256};
 
 // --- User & Payload Structs ---
 
@@ -43,12 +43,10 @@ pub struct RefreshPayload {
     pub refresh_token: String,
 }
 
-
 // --- Helper struct for reading the token from the database ---
 #[derive(sqlx::FromRow)]
 struct RefreshTokenRecord {
     user_id: i64,
-    token_hash: String,
     expires_at: chrono::NaiveDateTime,
 }
 
@@ -69,7 +67,9 @@ pub async fn register(
         .map_err(|_| (AppError::InternalServerError("Database error".to_string())))?;
 
     if existing_user.is_some() {
-        return Err(AppError::Conflict("User with this email already exists".to_string()));
+        return Err(AppError::Conflict(
+            "User with this email already exists".to_string(),
+        ));
     }
 
     // Hash the password
@@ -111,7 +111,10 @@ pub async fn login(
 
     // --- Create short-lived access token (15 minutes) ---
     let access_token_exp = (Utc::now() + Duration::minutes(15)).timestamp() as usize;
-    let access_claims = Claims { sub: user.id.to_string(), exp: access_token_exp };
+    let access_claims = Claims {
+        sub: user.id.to_string(),
+        exp: access_token_exp,
+    };
     let access_token = encode(
         &Header::default(),
         &access_claims,
@@ -120,14 +123,14 @@ pub async fn login(
 
     // --- Create long-lived refresh token (7 days) ---
     let mut refresh_token_bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut refresh_token_bytes);
+    rand::rng().fill_bytes(&mut refresh_token_bytes);
     let refresh_token = general_purpose::URL_SAFE_NO_PAD.encode(refresh_token_bytes);
-    
+
     // --- Hash the refresh token using SHA-256 for DB lookup ---
     let mut hasher = Sha256::new();
     hasher.update(refresh_token.as_bytes());
     let refresh_token_hash = hex::encode(hasher.finalize());
-    
+
     let refresh_token_exp = Utc::now() + Duration::days(7);
 
     // --- Store hashed refresh token in the database ---
@@ -151,32 +154,39 @@ pub async fn login(
 
 pub async fn auth_middleware(
     State(state): State<AppState>,
-    // Use TypedHeader to extract the token
     TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
-    // You can also add the request as a parameter if you need to access it
-    request: Request,
+    mut request: Request, // Note: changed to mutable
     next: Next,
 ) -> Result<Response, AppError> {
-    // Decode and validate the token
     let token_data = decode::<Claims>(
         auth_header.token(),
         &DecodingKey::from_secret(state.app_config.jwt_secret.as_ref()),
         &Validation::default(),
     )
-    .map_err(|e| {
-        // Log the specific error for debugging
-        tracing::warn!("Token validation failed: {}", e);
-        AppError::Unauthorized
-    })?;
+    .map_err(|_| AppError::Unauthorized)?;
 
-    let user_id = token_data.claims.sub;
+    let user_id: i64 = token_data
+        .claims
+        .sub
+        .parse()
+        .map_err(|_| AppError::InternalServerError("Invalid user ID in token".to_string()))?;
 
-    // Add the user_id to the request extensions so handlers can access it.
-    // We need to mutate the request, so we get a mutable reference.
-    let mut request = request;
-    request.extensions_mut().insert(user_id);
+    // Fetch the user from the database ONCE in the middleware
+    let user = sqlx::query_as!(
+        crate::auth::User,
+        "SELECT id, email, password_hash FROM users WHERE id = ?",
+        user_id
+    )
+    .fetch_optional(&state.db_pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?; // User not found, token is for a deleted user
 
-    // If the token is valid, we can proceed to the next middleware or the handler
+    // Add the authenticated user data to the request extensions
+    request.extensions_mut().insert(AuthUser {
+        id: user.id,
+        email: user.email,
+    });
+
     Ok(next.run(request).await)
 }
 
@@ -206,7 +216,8 @@ pub async fn refresh(
         sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = ?")
             .bind(&incoming_token_hash)
             .execute(&state.db_pool)
-            .await.ok(); // We don't care about the result of the cleanup
+            .await
+            .ok(); // We don't care about the result of the cleanup
         return Err(AppError::Unauthorized);
     }
 
@@ -227,9 +238,9 @@ pub async fn refresh(
 
     // 5. Issue a brand new long-lived refresh token (Token Rotation).
     let mut new_refresh_token_bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut new_refresh_token_bytes);
+    rand::rng().fill_bytes(&mut new_refresh_token_bytes);
     let new_refresh_token = general_purpose::URL_SAFE_NO_PAD.encode(new_refresh_token_bytes);
-    
+
     // Hash the new token for database storage
     let mut new_hasher = Sha256::new();
     new_hasher.update(new_refresh_token.as_bytes());
@@ -238,14 +249,12 @@ pub async fn refresh(
 
     // 6. Update the database with the new refresh token hash and expiry,
     // replacing the one that was just used. This invalidates the old token.
-    sqlx::query(
-        "UPDATE refresh_tokens SET token_hash = ?, expires_at = ? WHERE user_id = ?",
-    )
-    .bind(&new_refresh_token_hash)
-    .bind(new_refresh_token_exp)
-    .bind(user_id)
-    .execute(&state.db_pool)
-    .await?;
+    sqlx::query("UPDATE refresh_tokens SET token_hash = ?, expires_at = ? WHERE user_id = ?")
+        .bind(&new_refresh_token_hash)
+        .bind(new_refresh_token_exp)
+        .bind(user_id)
+        .execute(&state.db_pool)
+        .await?;
 
     // 7. Return the new pair of tokens to the client.
     Ok(Json(LoginResponse {
@@ -254,15 +263,14 @@ pub async fn refresh(
     }))
 }
 
-
-
-
 // --- NEW: Logout Handler ---
 pub async fn logout(
     State(state): State<AppState>,
     axum::Extension(user_id_str): axum::Extension<String>,
 ) -> Result<StatusCode, AppError> {
-    let user_id: i64 = user_id_str.parse().map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
+    let user_id: i64 = user_id_str
+        .parse()
+        .map_err(|_| AppError::InternalServerError("Invalid user ID".to_string()))?;
 
     // Simply delete the refresh token from the database
     sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")

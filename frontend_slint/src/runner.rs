@@ -5,7 +5,7 @@ slint::include_modules!();
 use common::ContactDto; // Use the DTO for backend communication
 use common::Credentials;
 use common::LoginResponse;
-use slint::{VecModel};
+use slint::VecModel;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -77,7 +77,7 @@ pub fn run() {
                     tracing::info!("Login response: {:?}", response);
                     if response.status().is_success() {
                         if let Ok(login_response) = response.json::<LoginResponse>().await {
-                            let token = login_response.token;
+                            let token = login_response.access_token;
                             slint::invoke_from_event_loop(move || {
                                 app_weak.unwrap().set_auth_token(token.into());
                                 // Fetch contacts after successful login

@@ -5,7 +5,7 @@ use ts_rs::TS;
 
 #[cfg(not(target_arch = "wasm32"))]
 use sqlx::FromRow;
-use validator::Validate; 
+use validator::Validate;
 pub mod utils;
 
 #[cfg_attr(not(target_arch = "wasm32"), derive(FromRow))]

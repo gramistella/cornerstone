@@ -1,11 +1,15 @@
+use std::{sync::Arc, time::Duration};
+
 use axum::{
     debug_handler,
     extract::{Path, State},
     http::{header, HeaderValue, Method, StatusCode},
+    middleware,
     routing::{get, get_service, post},
     Json, Router,
 };
 
+use serde::Deserialize;
 use sqlx::SqlitePool;
 use tower_http::{
     cors::CorsLayer,
@@ -17,10 +21,12 @@ use tower_http::{
 use tracing;
 use validator::Validate;
 
-use crate::{auth, config::AppConfig};
 use crate::error::AppError;
 use crate::extractors::AuthUser;
+use crate::{auth, config::AppConfig};
 use common::ContactDto;
+
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -36,9 +42,8 @@ fn create_static_router() -> Router {
     // This code block will only be included if the `svelte-ui` feature is enabled
     #[cfg(feature = "svelte-ui")]
     let static_service = get_service(
-        ServeDir::new("backend/static/svelte-build").not_found_service(ServeFile::new(
-            "backend/static/svelte-build/index.html",
-        )),
+        ServeDir::new("backend/static/svelte-build")
+            .not_found_service(ServeFile::new("backend/static/svelte-build/index.html")),
     )
     .handle_error(|error| async move {
         (
@@ -50,9 +55,8 @@ fn create_static_router() -> Router {
     // This code block will only be included if the `slint-ui` feature is enabled
     #[cfg(feature = "slint-ui")]
     let static_service = get_service(
-        ServeDir::new("backend/static/slint-build").not_found_service(ServeFile::new(
-            "backend/static/slint-build/index.html",
-        )),
+        ServeDir::new("backend/static/slint-build")
+            .not_found_service(ServeFile::new("backend/static/slint-build/index.html")),
     )
     .handle_error(|error| async move {
         (
@@ -65,11 +69,33 @@ fn create_static_router() -> Router {
 }
 
 pub fn create_router(app_state: AppState) -> Router {
+    let governor_conf = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(30)
+            .burst_size(5)
+            .finish()
+            .unwrap(),
+    );
+
+    // This avoids the storage size growing indefinitely
+    let governor_limiter = governor_conf.limiter().clone();
+    let interval = Duration::from_secs(60);
+    // a separate background task to clean up
+    std::thread::spawn(move || loop {
+        std::thread::sleep(interval);
+        tracing::info!("rate limiting storage size: {}", governor_limiter.len());
+        governor_limiter.retain_recent();
+    });
+
     // Public routes that do not require authentication
     let public_routes = Router::new()
         .route("/register", post(auth::register))
         .route("/login", post(auth::login))
-        .route("/refresh", post(auth::refresh));
+        .route("/refresh", post(auth::refresh))
+        // Apply the rate-limiting layer to public routes
+        .layer(GovernorLayer {
+            config: governor_conf,
+        });
 
     // Protected routes that require authentication
     let protected_routes = Router::new()
@@ -78,12 +104,14 @@ pub fn create_router(app_state: AppState) -> Router {
         .route(
             "/contacts/{id}",
             get(get_contact).put(update_contact).delete(delete_contact),
-        );
+        )
+        .route_layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            auth::auth_middleware,
+        ));
 
     // Combine public and protected routes under the /api/v1 prefix
-    let api_routes = Router::new()
-        .merge(public_routes)
-        .merge(protected_routes);
+    let api_routes = Router::new().merge(public_routes).merge(protected_routes);
 
     let cors = CorsLayer::new()
         .allow_origin(
@@ -114,14 +142,13 @@ pub fn create_router(app_state: AppState) -> Router {
             TraceLayer::new_for_http()
                 // Add this layer to add a request ID to all traces
                 .make_span_with(tower_http::trace::DefaultMakeSpan::new().include_headers(true))
-                .on_response(tower_http::trace::DefaultOnResponse::new().include_headers(true))
+                .on_response(tower_http::trace::DefaultOnResponse::new().include_headers(true)),
         )
         .layer(SetRequestIdLayer::new(
             "x-request-id".parse().unwrap(),
             MakeRequestUuid,
         )) // This line adds the request ID
         .layer(cors)
-
 }
 // --- API Handlers ---
 
@@ -131,7 +158,11 @@ async fn create_contact(
     user: AuthUser,
     Json(new_contact_dto): Json<ContactDto>,
 ) -> Result<(StatusCode, Json<ContactDto>), AppError> {
-    tracing::info!("Creating contact: {:?}, assigned to user {}", new_contact_dto, user.id);
+    tracing::info!(
+        "Creating contact: {:?}, assigned to user {}",
+        new_contact_dto,
+        user.id
+    );
 
     // Validate the new contact DTO
     new_contact_dto.validate()?;
@@ -170,7 +201,11 @@ async fn get_contact(
     Path(id): Path<i64>,
     user: AuthUser,
 ) -> Result<Json<ContactDto>, AppError> {
-    tracing::info!("Fetching single contact with id: {} for user {}", id, user.id);
+    tracing::info!(
+        "Fetching single contact with id: {} for user {}",
+        id,
+        user.id
+    );
 
     let result = sqlx::query_as!(
         ContactDto,
@@ -193,28 +228,44 @@ async fn get_contact(
     }
 }
 
+#[derive(Deserialize)]
+pub struct Pagination {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+}
+
 #[debug_handler]
 async fn get_contacts(
     State(state): State<AppState>,
     user: AuthUser,
+    axum::extract::Query(pagination): axum::extract::Query<Pagination>, // <-- Add this
 ) -> Result<Json<Vec<ContactDto>>, AppError> {
+    // Set default values for pagination
+    let page = pagination.page.unwrap_or(1);
+    let per_page = pagination.per_page.unwrap_or(20);
+    let offset = (page - 1) * per_page;
 
-    // Now you have the user's ID and can use it in your logic.
-    // The type `String` must match exactly what you inserted in the middleware.
     tracing::info!(
-        "Fetching all contacts from database for user_id: {}",
-        user.id
+        "Fetching contacts for user {}, page: {}, per_page: {}",
+        user.id,
+        page,
+        per_page
     );
 
-    
     let result = sqlx::query_as!(
         ContactDto,
-        "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE user_id = ?",
-        user.id
+        "SELECT id, name, email, age, subscribed, contact_type 
+         FROM contacts 
+         WHERE user_id = ?
+         LIMIT ? OFFSET ?",
+        user.id,
+        per_page,
+        offset
     )
     .fetch_all(&state.db_pool)
     .await;
 
+    // ... rest of the handler remains the same
     match result {
         Ok(contacts) => Ok(Json(contacts)),
         Err(e) => {
@@ -236,7 +287,6 @@ async fn update_contact(
     tracing::info!("Updating contact with id: {} for user {}", id, user.id);
 
     updated_contact.validate()?;
-    
 
     let result = sqlx::query(
         r#"
@@ -280,7 +330,7 @@ async fn delete_contact(
     user: AuthUser,
 ) -> Result<StatusCode, AppError> {
     tracing::info!("Deleting contact with id: {} for user {}", id, user.id);
-    
+
     let result = sqlx::query("DELETE FROM contacts WHERE id = ? AND user_id = ?")
         .bind(id)
         .bind(user.id)

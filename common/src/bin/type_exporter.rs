@@ -8,27 +8,30 @@ fn main() {
     let a = ContactDto::export_to_string().unwrap();
     let b = Credentials::export_to_string().unwrap();
     let c = LoginResponse::export_to_string().unwrap();
-    
+
     let all_types = format!("{}{}{}", a, b, c);
     let cleaned_types = remove_duplicate_comments(&all_types);
-    
+
     // Define the output path relative to the workspace root
     let out_path = Path::new("frontend_svelte/src/lib/types.ts");
-    
+
     // Create the directory if it doesn't exist
     if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent).unwrap();
     }
-    
+
     fs::write(out_path, cleaned_types).unwrap();
-    println!("✅ TypeScript definitions generated at: {}", out_path.display());
+    println!(
+        "✅ TypeScript definitions generated at: {}",
+        out_path.display()
+    );
 }
 
 fn remove_duplicate_comments(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let mut result = Vec::new();
     let mut found_first_comment = false;
-    
+
     for line in lines {
         let trimmed = line.trim_start();
         if trimmed.starts_with("//") {
@@ -44,6 +47,6 @@ fn remove_duplicate_comments(content: &str) -> String {
             result.push(line);
         }
     }
-    
+
     result.join("\n") + "\n"
 }

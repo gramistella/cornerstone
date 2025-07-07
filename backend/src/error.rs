@@ -50,9 +50,12 @@ impl IntoResponse for AppError {
                 // The `errors` object contains detailed information on which fields failed.
                 // We can serialize this to JSON for a rich client-side error message.
                 let message = format!("Input validation failed: {}", errors).replace('\n', ", ");
-                return (StatusCode::BAD_REQUEST, Json(json!({ "error": message, "details": errors }))).into_response();
-            }
-            // Handle other variants...
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": message, "details": errors })),
+                )
+                    .into_response();
+            } // Handle other variants...
         };
 
         let body = Json(json!({ "error": error_message }));
@@ -83,6 +86,5 @@ impl From<bcrypt::BcryptError> for AppError {
         AppError::PasswordError(e)
     }
 }
-
 
 // Add From for other error types...

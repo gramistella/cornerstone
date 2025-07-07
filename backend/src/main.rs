@@ -69,17 +69,23 @@ async fn main() {
     tracing::info!("Initializing server...");
     let app = backend::web_server::create_router(app_state.clone());
 
-    let ip_addr: IpAddr = config.web.addr.parse()
-    .expect("Invalid IP address in config");
+    let ip_addr: IpAddr = config
+        .web
+        .addr
+        .parse()
+        .expect("Invalid IP address in config");
 
     let addr = SocketAddr::new(ip_addr, config.web.port);
     tracing::info!("Serving frontend and API at http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app.into_make_service())
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .unwrap();
 
     // This code runs after the server has stopped accepting new connections
     tracing::info!("Server shut down gracefully. Closing database connections.");

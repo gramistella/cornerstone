@@ -1,53 +1,31 @@
-use axum::{
-    extract::{FromRequestParts},
-    http::{request::Parts},
-};
-use crate::{auth::Claims, error::AppError, web_server::AppState};
-use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
-    TypedHeader,
-};
-use jsonwebtoken::{decode, DecodingKey, Validation};
+// backend/src/extractors.rs
+use crate::{error::AppError, web_server::AppState};
+use axum::{extract::FromRequestParts, http::request::Parts};
 
-// This struct will be the extractor
+// The struct is the same
+#[derive(Clone, Debug)]
 pub struct AuthUser {
     pub id: i64,
-    pub email: String, // You could add more user fields if needed
+    pub email: String,
 }
 
+// But the extractor logic changes completely
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
 
     async fn from_request_parts(
         parts: &mut Parts,
-        state: &AppState,
+        _state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        // Extract the token from the authorization header
-        let TypedHeader(Authorization(bearer)) = TypedHeader::<Authorization<Bearer>>::from_request_parts(parts, state)
-            .await
-            .map_err(|_| AppError::Unauthorized)?;
+        // The middleware is responsible for putting AuthUser in extensions.
+        // If it's not there, it's a 500 Internal Server Error because
+        // the middleware should have been run.
+        let user = parts.extensions.get::<AuthUser>().ok_or_else(|| {
+            AppError::InternalServerError(
+                "AuthUser not found in request extensions. Is the auth middleware missing?".into(),
+            )
+        })?;
 
-        // Decode the user data
-        let token_data = decode::<Claims>(
-            bearer.token(),
-            &DecodingKey::from_secret(state.app_config.jwt_secret.as_ref()),
-            &Validation::default(),
-        )
-        .map_err(|_| AppError::Unauthorized)?;
-
-        // Find the user in the database to ensure they still exist
-        let user_id: i64 = token_data.claims.sub.parse()
-            .map_err(|_| AppError::InternalServerError("Invalid user ID in token".to_string()))?;
-
-        let user = sqlx::query_as!(
-            crate::auth::User, // Assuming User struct is public in auth module
-            "SELECT id, email, password_hash FROM users WHERE id = ?",
-            user_id
-        )
-        .fetch_optional(&state.db_pool)
-        .await?
-        .ok_or(AppError::Unauthorized)?; // User not found, token is invalid
-
-        Ok(AuthUser { id: user.id, email: user.email })
+        Ok(user.clone())
     }
 }
