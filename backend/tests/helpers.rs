@@ -1,4 +1,3 @@
-// backend/tests/helpers.rs
 use backend::{config::AppConfig, web_server::AppState};
 use common::{Credentials, LoginResponse};
 use reqwest::StatusCode;

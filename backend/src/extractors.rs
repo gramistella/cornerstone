@@ -1,4 +1,3 @@
-// backend/src/extractors.rs
 use crate::{error::AppError, web_server::AppState};
 use axum::{extract::FromRequestParts, http::request::Parts};
 

@@ -1,5 +1,3 @@
-// --- File: backend/src/auth.rs ---
-
 use axum::{extract::State, http::StatusCode, Json};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use common::Credentials;
@@ -22,6 +20,7 @@ use crate::extractors::AuthUser;
 use crate::web_server::AppState;
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
+
 // --- User & Payload Structs ---
 
 #[derive(sqlx::FromRow, Debug)]

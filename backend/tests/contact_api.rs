@@ -1,4 +1,3 @@
-// backend/tests/contacts_api.rs
 use common::ContactDto;
 use reqwest::StatusCode;
 mod helpers;

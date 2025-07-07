@@ -1,5 +1,3 @@
-// --- File: backend/src/main.rs ---
-
 // Use the library part of the `backend` crate instead of a local module.
 use backend::web_server::AppState;
 use sqlx::sqlite::SqlitePoolOptions;
