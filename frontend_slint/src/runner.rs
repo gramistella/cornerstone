@@ -65,7 +65,7 @@ pub fn run() {
     app.on_login(move |email, password| {
         let app_weak = app_weak.clone();
         let client = client_clone.clone();
-        let url = format!("{}/login", base_url_clone);
+        let url = format!("{base_url_clone}/login");
         let credentials = Credentials {
             email: email.to_string(),
             password: password.to_string(),
@@ -104,7 +104,7 @@ pub fn run() {
     let base_url_clone = base_url.to_string();
     app.on_register(move |email, password| {
         let client = client_clone.clone();
-        let url = format!("{}/register", base_url_clone);
+        let url = format!("{base_url_clone}/register");
         let credentials = Credentials {
             email: email.to_string(),
             password: password.to_string(),
@@ -118,10 +118,10 @@ pub fn run() {
                         // Here you could show a success message in the UI
                     } else {
                         let error_msg = response.text().await.unwrap_or_default();
-                        println!("Registration failed: {}", error_msg);
+                        println!("Registration failed: {error_msg}");
                     }
                 }
-                Err(e) => println!("Error during registration request: {}", e),
+                Err(e) => println!("Error during registration request: {e}"),
             }
         });
     });
@@ -141,7 +141,7 @@ pub fn run() {
     app.on_fetch_contacts(move || {
         let app_weak = app_weak.clone();
         let client = client_clone.clone();
-        let url = format!("{}/contacts", base_url_clone);
+        let url = format!("{base_url_clone}/contacts");
         let token = app_weak.unwrap().get_auth_token().to_string();
         spawn_local(async move {
             println!("Fetching contacts from backend...");
@@ -169,7 +169,7 @@ pub fn run() {
                     }
                 }
                 Err(e) => {
-                    println!("Error fetching contacts: {}", e);
+                    println!("Error fetching contacts: {e}");
                 }
             }
         });
@@ -182,7 +182,7 @@ pub fn run() {
     app.on_add_contact(move |name, email, age, subscribed, contact_type| {
         let app_weak = app_weak.clone();
         let client = client_clone.clone();
-        let url = format!("{}/contacts", base_url_clone);
+        let url = format!("{base_url_clone}/contacts");
 
         // Create the DTO to send to the backend
         let new_contact = ContactDto {
@@ -214,7 +214,7 @@ pub fn run() {
                     });
                 }
                 Err(e) => {
-                    println!("Error adding contact: {}", e);
+                    println!("Error adding contact: {e}");
                 }
             }
         });
@@ -244,7 +244,7 @@ pub fn run() {
                         app_weak.unwrap().invoke_fetch_contacts();
                     });
                 }
-                Err(e) => println!("Error updating contact: {}", e),
+                Err(e) => println!("Error updating contact: {e}"),
             }
         });
     });
@@ -256,7 +256,7 @@ pub fn run() {
     app.on_delete_contact(move |id| {
         let app_weak = app_weak.clone();
         let client = client_clone.clone();
-        let url = format!("{}/contacts/{}", base_url_clone, id);
+        let url = format!("{base_url_clone}/contacts/{id}");
         let token = app_weak.unwrap().get_auth_token().to_string();
         spawn_local(async move {
             match client.delete(&url).bearer_auth(token).send().await {
@@ -266,7 +266,7 @@ pub fn run() {
                         app_weak.unwrap().invoke_fetch_contacts();
                     });
                 }
-                Err(e) => println!("Error deleting contact: {}", e),
+                Err(e) => println!("Error deleting contact: {e}"),
             }
         });
     });
@@ -277,10 +277,10 @@ pub fn run() {
     app.on_get_contact_for_edit(move |id| {
         let app_weak = app_weak.clone();
         let client = client_clone.clone();
-        let url = format!("{}/contacts/{}", base_url_clone, id);
+        let url = format!("{base_url_clone}/contacts/{id}");
         let token = app_weak.unwrap().get_auth_token().to_string();
         spawn_local(async move {
-            println!("Fetching contact {} for edit...", id);
+            println!("Fetching contact {id} for edit...");
             match client.get(&url).bearer_auth(token).send().await {
                 Ok(response) => {
                     if let Ok(contact_dto) = response.json::<ContactDto>().await {
@@ -296,7 +296,7 @@ pub fn run() {
                     }
                 }
                 Err(e) => {
-                    println!("Error fetching single contact: {}", e);
+                    println!("Error fetching single contact: {e}");
                 }
             }
         });

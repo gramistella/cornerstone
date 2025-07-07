@@ -1,19 +1,17 @@
 // backend/tests/helpers.rs
 use backend::{config::AppConfig, web_server::AppState};
 use common::{Credentials, LoginResponse};
-use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
-use std::net::{Ipv4Addr, SocketAddr};
-use tokio::net::TcpListener;
 use reqwest::StatusCode;
 use sqlx::sqlite::SqliteConnectOptions;
+use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
+use tokio::net::TcpListener;
 
 /// Spawn a test server and return the address and a reqwest client.
 pub async fn spawn_app() -> (SocketAddr, reqwest::Client, SqlitePool) {
     // 2. The listener is now created asynchronously.
-    let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
-        .await
-        .unwrap();
+    let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     // Create connection options that enforce foreign keys
@@ -23,12 +21,11 @@ pub async fn spawn_app() -> (SocketAddr, reqwest::Client, SqlitePool) {
 
     // Create the pool from the connection options
     let db_pool = SqlitePoolOptions::new()
-         .max_connections(1)
+        .max_connections(1)
         .connect_with(connect_options)
         .await
         .expect("Failed to create in-memory database pool.");
-    
-    
+
     sqlx::migrate!("./migrations")
         .run(&db_pool)
         .await
@@ -71,12 +68,11 @@ pub async fn spawn_app() -> (SocketAddr, reqwest::Client, SqlitePool) {
     (addr, client, db_pool)
 }
 
-
 /// Helper to register and login a test user, returning their auth token.
 pub async fn get_auth_token(addr: &SocketAddr, client: &reqwest::Client) -> String {
-    let register_url = format!("http://{}/api/v1/register", addr);
-    let login_url = format!("http://{}/api/v1/login", addr);
-    //println!("Register URL: {}", register_url);
+    let register_url = format!("http://{addr}/api/v1/register");
+    let login_url = format!("http://{addr}/api/v1/login");
+
     let credentials = Credentials {
         email: "test@example.com".to_string(),
         password: "password123".to_string(),
@@ -89,7 +85,7 @@ pub async fn get_auth_token(addr: &SocketAddr, client: &reqwest::Client) -> Stri
         .send()
         .await
         .expect("Failed to register user");
-    //println!("Response: {:?}", res);
+
     assert_eq!(res.status(), StatusCode::CREATED, "Registration failed");
 
     // Login
@@ -104,14 +100,11 @@ pub async fn get_auth_token(addr: &SocketAddr, client: &reqwest::Client) -> Stri
     // Read the body as text INSTEAD of trying to parse as JSON immediately
     let body_text = response.text().await.expect("Failed to read response body");
 
-    // --- Add this block for debugging ---
-    println!("\n--- LOGIN RESPONSE DEBUG ---");
-    println!("Status Code: {}", status);
-    println!("Response Body: '{}'", body_text);
-    println!("--- END DEBUG ---\n");
-    // ------------------------------------
-
-    assert_eq!(status, StatusCode::OK, "Login request did not return 200 OK");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "Login request did not return 200 OK"
+    );
 
     // Now, try to parse the text we received
     let login_response: LoginResponse =

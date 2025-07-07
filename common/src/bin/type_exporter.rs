@@ -9,7 +9,7 @@ fn main() {
     let b = Credentials::export_to_string().unwrap();
     let c = LoginResponse::export_to_string().unwrap();
 
-    let all_types = format!("{}{}{}", a, b, c);
+    let all_types = format!("{a}{b}{c}");
     let cleaned_types = remove_duplicate_comments(&all_types);
 
     // Define the output path relative to the workspace root

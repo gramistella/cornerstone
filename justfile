@@ -89,14 +89,13 @@ test-backend: db-migrate
 
 # Run database migrations using sqlx-cli.
 # NOTE: This requires `sqlx-cli` to be installed (`cargo install sqlx-cli`).
-# The path is hardcoded here to ensure it runs correctly from the root.
 db-migrate:
     @echo "🗄️ Running database migrations..."
-    @sqlx migrate run --database-url 'sqlite:backend/database.db' --source backend/migrations
+    @sqlx migrate run --source backend/migrations
 
 # DANGER: Deletes and recreates the database, then runs all migrations.
 # This will ask for confirmation before proceeding.
-[confirm("⚠️  This will DELETE the current database. Are you sure?")]
+[confirm("⚠️ This will DELETE the current database. Are you sure?")]
 db-reset:
     @echo "-> Proceeding with database reset..."
     @echo "  - Deleting old database..."

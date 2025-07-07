@@ -81,7 +81,7 @@ pub async fn register(
             "User with this email already exists".to_string(),
         ));
     }
-    
+
     // Hash the password
     let password_hash = hash(&payload.password, DEFAULT_COST).map_err(|e| {
         tracing::error!("Failed to hash password: {}", e);
@@ -231,13 +231,12 @@ pub async fn refresh(
 
     // 2. Find the token in the database by its hash.
     // NOTE: For performance, you should add a database index to the `token_hash` column.
-    let record: RefreshTokenRecord = sqlx::query_as(
-        "SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?",
-    )
-    .bind(&incoming_token_hash)
-    .fetch_optional(&state.db_pool)
-    .await?
-    .ok_or(AppError::Unauthorized)?; // If no such token, it's invalid.
+    let record: RefreshTokenRecord =
+        sqlx::query_as("SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?")
+            .bind(&incoming_token_hash)
+            .fetch_optional(&state.db_pool)
+            .await?
+            .ok_or(AppError::Unauthorized)?; // If no such token, it's invalid.
 
     // 3. Check if the database token has expired.
     if record.expires_at < Utc::now().naive_utc() {
@@ -304,10 +303,7 @@ pub async fn refresh(
         (status = 401, description = "Authentication required")
     )
 )]
-pub async fn logout(
-    State(state): State<AppState>,
-    user: AuthUser,
-) -> Result<StatusCode, AppError> {
+pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode, AppError> {
     // Simply delete the refresh token from the database
     sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")
         .bind(user.id)

@@ -11,14 +11,13 @@ static TRACING: Lazy<()> = Lazy::new(|| {
 
 #[tokio::test]
 async fn test_contacts_crud_flow() {
-
     Lazy::force(&TRACING);
 
     // Arrange: Spawn the app and get an authenticated client
     let (addr, client, _db_pool) = helpers::spawn_app().await;
     let token = helpers::get_auth_token(&addr, &client).await;
 
-    let contacts_url = format!("http://{}/api/v1/contacts", addr);
+    let contacts_url = format!("http://{addr}/api/v1/contacts");
 
     // 1. Initially, GET contacts should return an empty list
     let response = client
@@ -27,10 +26,13 @@ async fn test_contacts_crud_flow() {
         .send()
         .await
         .expect("Failed to execute request.");
-    
+
     assert_eq!(response.status(), StatusCode::OK);
     let contacts: Vec<ContactDto> = response.json().await.unwrap();
-    assert!(contacts.is_empty(), "Initially there should be no contacts.");
+    assert!(
+        contacts.is_empty(),
+        "Initially there should be no contacts."
+    );
 
     // 2. CREATE a new contact
     let new_contact = ContactDto {
@@ -56,7 +58,7 @@ async fn test_contacts_crud_flow() {
     assert!(created_contact.id.is_some());
 
     let contact_id = created_contact.id.unwrap();
-    let single_contact_url = format!("{}/{}", contacts_url, contact_id);
+    let single_contact_url = format!("{contacts_url}/{contact_id}");
 
     // 3. GET the created contact by its ID
     let response = client
@@ -74,7 +76,7 @@ async fn test_contacts_crud_flow() {
     // 4. UPDATE the contact
     let updated_contact_data = ContactDto {
         id: Some(contact_id),
-        name: "John Smith".to_string(), // Name changed
+        name: "John Smith".to_string(),           // Name changed
         email: "john.smith@test.com".to_string(), // Email changed
         age: 31,
         subscribed: false,
@@ -94,7 +96,6 @@ async fn test_contacts_crud_flow() {
     assert_eq!(updated_contact_response.name, "John Smith");
     assert_eq!(updated_contact_response.age, 31);
 
-
     // 5. DELETE the contact
     let response = client
         .delete(&single_contact_url)
@@ -112,6 +113,6 @@ async fn test_contacts_crud_flow() {
         .send()
         .await
         .expect("Failed to execute request.");
-    
+
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

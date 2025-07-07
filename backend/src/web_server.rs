@@ -28,10 +28,10 @@ use common::ContactDto;
 
 use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 use common::Credentials;
 use common::LoginResponse;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -78,7 +78,7 @@ fn create_static_router() -> Router {
     .handle_error(|error| async move {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to serve Svelte app: {}", error),
+            format!("Failed to serve Svelte app: {error}"),
         )
     });
 
@@ -91,7 +91,7 @@ fn create_static_router() -> Router {
     .handle_error(|error| async move {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to serve Slint app: {}", error),
+            format!("Failed to serve Slint app: {error}"),
         )
     });
 
@@ -169,7 +169,8 @@ pub fn create_router(app_state: AppState) -> Router {
 
     if cfg!(debug_assertions) {
         tracing::info!("Debug mode: Enabling /docs endpoint");
-        router = router.merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()));
+        router =
+            router.merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()));
     }
 
     router

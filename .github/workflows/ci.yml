@@ -27,7 +27,7 @@ jobs:
           toolchain: stable
 
       - name: Install just
-        run: sudo apt-get update && sudo apt-get install -y just
+        run: cargo install just
 
       - name: Install sqlx-cli
         run: cargo install sqlx-cli --no-default-features --features native-tls,sqlite
@@ -43,6 +43,12 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Create Database File for CI
+        run: touch test_ci.db
+      
+      - name: Run database migrations
+        run: just db-migrate
+        
       - name: Lint code
         run: just lint
 

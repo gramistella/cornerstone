@@ -9,11 +9,11 @@ use thiserror::Error;
 use validator::ValidationErrors;
 
 // Define a custom error type
-#[derive(Debug, Error)] 
+#[derive(Debug, Error)]
 pub enum AppError {
     #[error("Internal Server Error: {0}")]
     InternalServerError(String),
-    
+
     #[error("Database error")]
     DatabaseError(sqlx::Error),
 
@@ -66,7 +66,7 @@ impl IntoResponse for AppError {
             AppError::ValidationError(errors) => {
                 // The `errors` object contains detailed information on which fields failed.
                 // We can serialize this to JSON for a rich client-side error message.
-                let message = format!("Input validation failed: {}", errors).replace('\n', ", ");
+                let message = format!("Input validation failed: {errors}").replace('\n', ", ");
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(json!({ "error": message, "details": errors })),

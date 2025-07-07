@@ -26,7 +26,7 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn from_env() -> Result<Self, figment::Error> {
+    pub fn from_env() -> Result<Self, Box<figment::Error>> {
         dotenv().ok();
 
         // Check for JWT_SECRET first
@@ -35,16 +35,17 @@ impl AppConfig {
             panic!("FATAL: APP_JWT_SECRET environment variable not set.");
         }
 
-        let config: _ = Figment::new()
+        let config = Figment::new()
             .merge(Toml::file("Config.toml")) // For non-sensitive defaults
             .merge(Env::prefixed("APP_").split("__")) // e.g., APP_DATABASE__URL
             .extract();
 
-        tracing::info!(
-            "Configuration loaded successfully, full config: {:?}",
-            config
-        );
-
-        return config;
+        match config {
+            Ok(cfg) => {
+                tracing::info!("Configuration loaded successfully, full config: {:?}", cfg);
+                Ok(cfg)
+            }
+            Err(e) => Err(Box::new(e)), // Box the error here
+        }
     }
 }
