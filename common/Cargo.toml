@@ -12,13 +12,15 @@ required-features = ["ts_export"] # This binary only works when the feature is e
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-slint = { version = "1.12.1", features = ["serde"] }
+# slint = { version = "1.12.1", features = ["serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
 utoipa = { version = "5.4.0", features = ["axum_extras", "chrono"] }
-utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 
 # ts-rs as an optional dependency for the svelte UI
-ts-rs = { version = "11.0.1", optional = true }
+ts-rs = { version = "11.0.1", optional = true, features = ["format"] }
+
+# The 'format' feature of ts-rs requires this dependency to be available
+dprint-plugin-typescript = { version = "0.95.8", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 sqlx = { version = "0.8.0", default-features = false, features = ["macros", "sqlite"] }
@@ -29,4 +31,4 @@ slint-build = "1.12.1"
 # Define the feature that enables ts-rs
 [features]
 default = ["ts_export"]
-ts_export = ["dep:ts-rs"]
+ts_export = ["dep:ts-rs", "dep:dprint-plugin-typescript"]
