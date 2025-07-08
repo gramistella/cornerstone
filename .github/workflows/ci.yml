@@ -52,6 +52,9 @@ jobs:
       - name: Lint code
         run: just lint
 
+      - name: Check code formatting
+        run: cargo fmt --all --check
+
       - name: Run backend tests
         # The test itself creates an in-memory db, but db-migrate
         # also checks that the migration files are valid SQL.

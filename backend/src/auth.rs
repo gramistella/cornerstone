@@ -19,6 +19,7 @@ use crate::error::AppError;
 use crate::extractors::AuthUser;
 use crate::web_server::AppState;
 use sha2::{Digest, Sha256};
+use sqlx::SqlitePool;
 use utoipa::ToSchema;
 
 // --- User & Payload Structs ---
@@ -47,6 +48,73 @@ pub struct RefreshPayload {
 struct RefreshTokenRecord {
     user_id: i64,
     expires_at: chrono::NaiveDateTime,
+}
+
+// --- Token Helper ---
+
+/// Creates a new access token and a new refresh token for a user.
+/// It stores the hashed refresh token in the database, replacing any existing one for the user.
+/// Optionally, if an `old_token_hash` is provided, it will be deleted as part of the transaction,
+/// ensuring old refresh tokens are invalidated upon use.
+async fn issue_tokens(
+    user_id: i64,
+    db_pool: &SqlitePool,
+    jwt_secret: &str,
+    old_token_hash: Option<&str>,
+) -> Result<LoginResponse, AppError> {
+    // --- Create short-lived access token (15 minutes) ---
+    let access_token_exp = (Utc::now() + Duration::minutes(15)).timestamp() as usize;
+    let access_claims = Claims {
+        sub: user_id.to_string(),
+        exp: access_token_exp,
+    };
+    let access_token = encode(
+        &Header::default(),
+        &access_claims,
+        &EncodingKey::from_secret(jwt_secret.as_ref()),
+    )?;
+
+    // --- Create a new long-lived refresh token (7 days) ---
+    let mut refresh_token_bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut refresh_token_bytes);
+    let new_refresh_token = general_purpose::URL_SAFE_NO_PAD.encode(refresh_token_bytes);
+
+    // Hash the new token for database storage
+    let mut new_hasher = Sha256::new();
+    new_hasher.update(new_refresh_token.as_bytes());
+    let new_refresh_token_hash = hex::encode(new_hasher.finalize());
+    let new_refresh_token_exp = (Utc::now() + Duration::days(7)).naive_utc();
+
+    // --- Database Operations in a Transaction ---
+    let mut tx = db_pool.begin().await?;
+
+    // If an old token was used (in a refresh operation), delete it.
+    if let Some(old_hash) = old_token_hash {
+        sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = ?")
+            .bind(old_hash)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // Insert the new refresh token, replacing any existing token for the user.
+    // This invalidates any other sessions if the user logs in again.
+    sqlx::query(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at",
+    )
+    .bind(user_id)
+    .bind(&new_refresh_token_hash)
+    .bind(new_refresh_token_exp)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    // Return the new pair of tokens to the client.
+    Ok(LoginResponse {
+        access_token,
+        refresh_token: new_refresh_token,
+    })
 }
 
 // --- API Handlers ---
@@ -128,48 +196,84 @@ pub async fn login(
         return Err(AppError::Unauthorized);
     }
 
-    // --- Create short-lived access token (15 minutes) ---
-    let access_token_exp = (Utc::now() + Duration::minutes(15)).timestamp() as usize;
-    let access_claims = Claims {
-        sub: user.id.to_string(),
-        exp: access_token_exp,
-    };
-    let access_token = encode(
-        &Header::default(),
-        &access_claims,
-        &EncodingKey::from_secret(state.app_config.jwt_secret.as_ref()),
-    )?;
+    let tokens = issue_tokens(user.id, &state.db_pool, &state.app_config.jwt_secret, None).await?;
 
-    // --- Create long-lived refresh token (7 days) ---
-    let mut refresh_token_bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut refresh_token_bytes);
-    let refresh_token = general_purpose::URL_SAFE_NO_PAD.encode(refresh_token_bytes);
+    Ok(Json(tokens))
+}
 
-    // --- Hash the refresh token using SHA-256 for DB lookup ---
-    let mut hasher = Sha256::new();
-    hasher.update(refresh_token.as_bytes());
-    let refresh_token_hash = hex::encode(hasher.finalize());
-
-    let refresh_token_exp = (Utc::now() + Duration::days(7)).naive_utc();
-
-    // --- Store hashed refresh token in the database ---
-    // Use ON CONFLICT to update the token if the user is already logged in,
-    // effectively invalidating the old refresh token.
-    sqlx::query(
-        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)
-         ON CONFLICT(user_id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at",
+// --- Refresh Token Handler ---
+#[utoipa::path(
+    post,
+    path = "/api/v1/refresh",
+    request_body = RefreshPayload,
+    responses(
+        (status = 200, description = "Token refreshed successfully", body = LoginResponse),
+        (status = 401, description = "Invalid or expired refresh token")
     )
-    .bind(user.id)
-    .bind(&refresh_token_hash)
-    .bind(refresh_token_exp)
-    .execute(&state.db_pool)
+)]
+pub async fn refresh(
+    State(state): State<AppState>,
+    Json(payload): Json<RefreshPayload>,
+) -> Result<Json<LoginResponse>, AppError> {
+    // Hash the incoming refresh token to find it in the database.
+    let mut hasher = Sha256::new();
+    hasher.update(payload.refresh_token.as_bytes());
+    let incoming_token_hash = hex::encode(hasher.finalize());
+
+    // Find the token in the database by its hash.
+    let record: RefreshTokenRecord =
+        sqlx::query_as("SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?")
+            .bind(&incoming_token_hash)
+            .fetch_optional(&state.db_pool)
+            .await?
+            .ok_or(AppError::Unauthorized)?;
+
+    // Check if the database token has expired.
+    if record.expires_at < Utc::now().naive_utc() {
+        // As a cleanup, remove the expired token from the DB
+        sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = ?")
+            .bind(&incoming_token_hash)
+            .execute(&state.db_pool)
+            .await
+            .ok(); // We don't care about the result of the cleanup
+        return Err(AppError::Unauthorized);
+    }
+
+    // All checks passed. Rotate tokens: issue a new pair and invalidate the old refresh token.
+    let tokens = issue_tokens(
+        record.user_id,
+        &state.db_pool,
+        &state.app_config.jwt_secret,
+        Some(&incoming_token_hash), // Pass the old token hash to be deleted
+    )
     .await?;
 
-    Ok(Json(LoginResponse {
-        access_token,
-        refresh_token, // Return the unhashed refresh token to the client
-    }))
+    Ok(Json(tokens))
 }
+
+// --- Logout Handler ---
+#[utoipa::path(
+    post,
+    path = "/api/v1/logout",
+    security(
+        ("bearer_auth" = [])
+    ),
+    responses(
+        (status = 204, description = "Logout successful"),
+        (status = 401, description = "Authentication required")
+    )
+)]
+pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode, AppError> {
+    // Simply delete the refresh token from the database
+    sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")
+        .bind(user.id)
+        .execute(&state.db_pool)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// --- Middleware for JWT Authentication ---
 
 pub async fn auth_middleware(
     State(state): State<AppState>,
@@ -207,107 +311,4 @@ pub async fn auth_middleware(
     });
 
     Ok(next.run(request).await)
-}
-
-// --- Refresh Token Handler ---
-#[utoipa::path(
-    post,
-    path = "/api/v1/refresh",
-    request_body = RefreshPayload,
-    responses(
-        (status = 200, description = "Token refreshed successfully", body = LoginResponse),
-        (status = 401, description = "Invalid or expired refresh token")
-    )
-)]
-pub async fn refresh(
-    State(state): State<AppState>,
-    Json(payload): Json<RefreshPayload>,
-) -> Result<Json<LoginResponse>, AppError> {
-    // 1. Hash the incoming refresh token to find it in the database.
-    let mut hasher = Sha256::new();
-    hasher.update(payload.refresh_token.as_bytes());
-    let incoming_token_hash = hex::encode(hasher.finalize());
-
-    // 2. Find the token in the database by its hash.
-    // NOTE: For performance, you should add a database index to the `token_hash` column.
-    let record: RefreshTokenRecord =
-        sqlx::query_as("SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?")
-            .bind(&incoming_token_hash)
-            .fetch_optional(&state.db_pool)
-            .await?
-            .ok_or(AppError::Unauthorized)?; // If no such token, it's invalid.
-
-    // 3. Check if the database token has expired.
-    if record.expires_at < Utc::now().naive_utc() {
-        // As a cleanup, remove the expired token from the DB
-        sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = ?")
-            .bind(&incoming_token_hash)
-            .execute(&state.db_pool)
-            .await
-            .ok(); // We don't care about the result of the cleanup
-        return Err(AppError::Unauthorized);
-    }
-
-    // --- All checks passed, we have a valid user. Now, rotate the tokens. ---
-    let user_id = record.user_id;
-
-    // 4. Issue a new short-lived access token.
-    let access_token_exp = (Utc::now() + Duration::minutes(15)).timestamp() as usize;
-    let access_claims = Claims {
-        sub: user_id.to_string(),
-        exp: access_token_exp,
-    };
-    let access_token = encode(
-        &Header::default(),
-        &access_claims,
-        &EncodingKey::from_secret(state.app_config.jwt_secret.as_ref()),
-    )?;
-
-    // 5. Issue a brand new long-lived refresh token (Token Rotation).
-    let mut new_refresh_token_bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut new_refresh_token_bytes);
-    let new_refresh_token = general_purpose::URL_SAFE_NO_PAD.encode(new_refresh_token_bytes);
-
-    // Hash the new token for database storage
-    let mut new_hasher = Sha256::new();
-    new_hasher.update(new_refresh_token.as_bytes());
-    let new_refresh_token_hash = hex::encode(new_hasher.finalize());
-    let new_refresh_token_exp = (Utc::now() + Duration::days(7)).naive_utc();
-
-    // 6. Update the database with the new refresh token hash and expiry,
-    // replacing the one that was just used. This invalidates the old token.
-    sqlx::query("UPDATE refresh_tokens SET token_hash = ?, expires_at = ? WHERE user_id = ?")
-        .bind(&new_refresh_token_hash)
-        .bind(new_refresh_token_exp)
-        .bind(user_id)
-        .execute(&state.db_pool)
-        .await?;
-
-    // 7. Return the new pair of tokens to the client.
-    Ok(Json(LoginResponse {
-        access_token,
-        refresh_token: new_refresh_token, // This is the new, un-hashed refresh token.
-    }))
-}
-
-// --- Logout Handler ---
-#[utoipa::path(
-    post,
-    path = "/api/v1/logout",
-    security(
-        ("bearer_auth" = [])
-    ),
-    responses(
-        (status = 204, description = "Logout successful"),
-        (status = 401, description = "Authentication required")
-    )
-)]
-pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode, AppError> {
-    // Simply delete the refresh token from the database
-    sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")
-        .bind(user.id)
-        .execute(&state.db_pool)
-        .await?;
-
-    Ok(StatusCode::NO_CONTENT)
 }

@@ -12,7 +12,6 @@ pub mod utils;
 #[cfg_attr(not(target_arch = "wasm32"), derive(FromRow))]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Validate, ToSchema)]
 #[cfg_attr(feature = "ts_export", derive(TS))] // Conditionally derive TS
-#[cfg_attr(feature = "ts_export", ts(export))] // Just 'export', not 'export_to'
 #[serde(rename_all = "camelCase")]
 pub struct ContactDto {
     #[schema(example = 1)]
@@ -35,7 +34,6 @@ pub struct ContactDto {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Validate, ToSchema)]
 #[cfg_attr(feature = "ts_export", derive(TS))]
-#[cfg_attr(feature = "ts_export", ts(export))]
 pub struct Credentials {
     #[validate(email)]
     #[schema(example = "test@example.com")]
@@ -47,7 +45,6 @@ pub struct Credentials {
 
 #[derive(Serialize, Deserialize, Clone, Debug, ToSchema)]
 #[cfg_attr(feature = "ts_export", derive(TS))]
-#[cfg_attr(feature = "ts_export", ts(export))]
 pub struct LoginResponse {
     pub access_token: String,
     pub refresh_token: String,
