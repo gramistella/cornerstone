@@ -9,7 +9,7 @@ fn main() {
     println!("📦 Generating TypeScript type definitions...");
 
     // 1. Collect all the unformatted TypeScript type definitions
-    let types_to_export = vec![
+    let types_to_export = [
         ContactDto::export_to_string().unwrap(),
         Credentials::export_to_string().unwrap(),
         LoginResponse::export_to_string().unwrap(),
@@ -47,7 +47,7 @@ fn format_typescript(content: &str) -> String {
         extension: None,              // Added: The extension can be inferred from the path
         text: content.to_string(),    // Note: The field expects a `String`
         config: &config,
-        external_formatter: None,     // Added: We are not using an external formatter
+        external_formatter: None, // Added: We are not using an external formatter
     });
 
     match result {
@@ -55,7 +55,7 @@ fn format_typescript(content: &str) -> String {
         Ok(None) => content.to_string(), // dprint returns None if no changes were made
         Err(e) => {
             // If formatting fails, log the error and return the unformatted text
-            eprintln!("Error formatting TypeScript: {}", e);
+            eprintln!("Error formatting TypeScript: {e}");
             content.to_string()
         }
     }

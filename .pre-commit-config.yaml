@@ -1,6 +1,10 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 
+default_language_version:
+    # Use Python 3.8 or greater for pre-commit-hooks v4.5.0 and later
+    python: python3.13
+
 repos:
   # Standard hooks for general file health
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -24,7 +28,7 @@ repos:
 
   # Hook for checking for unused dependencies in Cargo.toml
   - repo: https://github.com/est31/cargo-udeps
-    rev: v0.1.47
+    rev: v0.1.57
     hooks:
-      - id: cargo-udeps
-        args: ["--all-targets", "--backend=cargo-check"]
+      - id: udeps
+        args: ["--all-targets"]
