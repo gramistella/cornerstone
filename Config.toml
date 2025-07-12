@@ -1,7 +1,20 @@
-[database]
-url = "sqlite:backend/database.db"
-
+# Configuration for the web server
 [web]
 addr = "127.0.0.1"
 port = 8080
 cors_origin = "http://localhost:5173"
+
+# Configuration for the database connection
+[database]
+url = "sqlite:backend/database.db"
+
+# Configuration for API rate limiting
+[ratelimit]
+per_second = 30
+burst_size = 10
+
+# Configuration for JSON Web Tokens
+[jwt]
+secret = "your-production-secret-key" # This should be overidden in .env
+access_token_expires_minutes = 15
+refresh_token_expires_days = 7

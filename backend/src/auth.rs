@@ -15,12 +15,15 @@ use axum_extra::{
     TypedHeader,
 };
 
+use crate::config::JwtConfig;
 use crate::error::AppError;
 use crate::extractors::AuthUser;
 use crate::web_server::AppState;
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use utoipa::ToSchema;
+use validator::Validate;
 
 // --- User & Payload Structs ---
 
@@ -33,11 +36,12 @@ pub struct User {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String, // Subject (user id)
-    pub exp: usize,  // Expiration time
+    pub sub: String,   // Subject (user id)
+    pub exp: usize,    // Expiration time
+    pub nonce: String, // Nonce for access token uniqueness
 }
 
-// --- NEW: Struct for the refresh token payload ---
+// --- Struct for the refresh token payload ---
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RefreshPayload {
     pub refresh_token: String,
@@ -59,19 +63,28 @@ struct RefreshTokenRecord {
 async fn issue_tokens(
     user_id: i64,
     db_pool: &SqlitePool,
-    jwt_secret: &str,
+    jwt_config: &JwtConfig,
     old_token_hash: Option<&str>,
 ) -> Result<LoginResponse, AppError> {
+    // Generate a random nonce for the access token to ensure uniqueness
+    let nonce: String = rand::rng()
+        .sample_iter(&rand::distr::Alphanumeric)
+        .take(16)
+        .map(char::from)
+        .collect();
+
     // --- Create short-lived access token (15 minutes) ---
-    let access_token_exp = (Utc::now() + Duration::minutes(15)).timestamp() as usize;
+    let access_token_exp = (Utc::now() + Duration::minutes(jwt_config.access_token_expires_minutes))
+        .timestamp() as usize;
     let access_claims = Claims {
         sub: user_id.to_string(),
         exp: access_token_exp,
+        nonce,
     };
     let access_token = encode(
         &Header::default(),
         &access_claims,
-        &EncodingKey::from_secret(jwt_secret.as_ref()),
+        &EncodingKey::from_secret(jwt_config.secret.as_ref()),
     )?;
 
     // --- Create a new long-lived refresh token (7 days) ---
@@ -83,7 +96,8 @@ async fn issue_tokens(
     let mut new_hasher = Sha256::new();
     new_hasher.update(new_refresh_token.as_bytes());
     let new_refresh_token_hash = hex::encode(new_hasher.finalize());
-    let new_refresh_token_exp = (Utc::now() + Duration::days(7)).naive_utc();
+    let new_refresh_token_exp =
+        (Utc::now() + Duration::days(jwt_config.refresh_token_expires_days)).naive_utc();
 
     // --- Database Operations in a Transaction ---
     let mut tx = db_pool.begin().await?;
@@ -135,6 +149,9 @@ pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<Credentials>,
 ) -> Result<StatusCode, AppError> {
+    // Validate the incoming payload
+    payload.validate()?;
+
     tracing::info!("Registering user with email: {}", payload.email);
     // Check if user already exists
     let existing_user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE email = ?")
@@ -185,6 +202,9 @@ pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<Credentials>,
 ) -> Result<Json<LoginResponse>, AppError> {
+    // Validate the incoming payload
+    payload.validate()?;
+
     tracing::info!("Logging in user with email: {}", payload.email);
     let user: User = sqlx::query_as("SELECT * FROM users WHERE email = ?")
         .bind(&payload.email)
@@ -196,7 +216,7 @@ pub async fn login(
         return Err(AppError::Unauthorized);
     }
 
-    let tokens = issue_tokens(user.id, &state.db_pool, &state.app_config.jwt_secret, None).await?;
+    let tokens = issue_tokens(user.id, &state.db_pool, &state.app_config.jwt, None).await?;
 
     Ok(Json(tokens))
 }
@@ -243,7 +263,7 @@ pub async fn refresh(
     let tokens = issue_tokens(
         record.user_id,
         &state.db_pool,
-        &state.app_config.jwt_secret,
+        &state.app_config.jwt,
         Some(&incoming_token_hash), // Pass the old token hash to be deleted
     )
     .await?;
@@ -277,14 +297,23 @@ pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<Sta
 
 pub async fn auth_middleware(
     State(state): State<AppState>,
-    TypedHeader(auth_header): TypedHeader<Authorization<Bearer>>,
+    auth_header: Option<TypedHeader<Authorization<Bearer>>>,
     mut request: Request, // Note: changed to mutable
     next: Next,
 ) -> Result<Response, AppError> {
+    let token = auth_header
+        .ok_or(AppError::Unauthorized)?
+        .token()
+        .to_owned();
+
+    let mut validation = Validation::default();
+    validation.validate_exp = true;
+    validation.leeway = 0;
+
     let token_data = decode::<Claims>(
-        auth_header.token(),
-        &DecodingKey::from_secret(state.app_config.jwt_secret.as_ref()),
-        &Validation::default(),
+        &token,
+        &DecodingKey::from_secret(state.app_config.jwt.secret.as_ref()),
+        &validation,
     )
     .map_err(|_| AppError::Unauthorized)?;
 

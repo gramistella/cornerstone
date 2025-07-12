@@ -1,3 +1,4 @@
+use backend::config::RateLimitConfig;
 use backend::{config::AppConfig, web_server::AppState};
 use common::{Credentials, LoginResponse};
 use reqwest::StatusCode;
@@ -39,7 +40,15 @@ pub async fn spawn_app() -> (SocketAddr, reqwest::Client, SqlitePool) {
         database: backend::config::DatabaseConfig {
             url: "sqlite::memory:".to_string(),
         },
-        jwt_secret: "test-secret".to_string(),
+        jwt: backend::config::JwtConfig {
+            secret: "test_secret".to_string(),
+            access_token_expires_minutes: 15,
+            refresh_token_expires_days: 7,
+        },
+        ratelimit: RateLimitConfig {
+            per_second: 1000,
+            burst_size: 500,
+        },
     };
 
     let app_state = AppState {

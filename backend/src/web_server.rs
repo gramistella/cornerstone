@@ -101,8 +101,8 @@ fn create_static_router() -> Router {
 pub fn create_router(app_state: AppState) -> Router {
     let governor_conf = Arc::new(
         GovernorConfigBuilder::default()
-            .per_second(30)
-            .burst_size(5)
+            .per_second(app_state.app_config.ratelimit.per_second)
+            .burst_size(app_state.app_config.ratelimit.burst_size)
             .finish()
             .unwrap(),
     );
@@ -113,7 +113,7 @@ pub fn create_router(app_state: AppState) -> Router {
     // a separate background task to clean up
     std::thread::spawn(move || loop {
         std::thread::sleep(interval);
-        tracing::info!("rate limiting storage size: {}", governor_limiter.len());
+        tracing::debug!("Rate limiting storage size: {}", governor_limiter.len());
         governor_limiter.retain_recent();
     });
 
@@ -344,8 +344,8 @@ async fn get_contacts(
 
     let result = sqlx::query_as!(
         ContactDto,
-        "SELECT id, name, email, age, subscribed, contact_type 
-         FROM contacts 
+        "SELECT id, name, email, age, subscribed, contact_type
+         FROM contacts
          WHERE user_id = ?
          LIMIT ? OFFSET ?",
         user.id,

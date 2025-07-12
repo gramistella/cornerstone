@@ -67,7 +67,7 @@ impl IntoResponse for AppError {
                 // We can serialize this to JSON for a rich client-side error message.
                 let message = format!("Input validation failed: {errors}").replace('\n', ", ");
                 return (
-                    StatusCode::BAD_REQUEST,
+                    StatusCode::UNPROCESSABLE_ENTITY,
                     Json(json!({ "error": message, "details": errors })),
                 )
                     .into_response();

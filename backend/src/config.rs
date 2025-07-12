@@ -19,10 +19,24 @@ pub struct WebConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct JwtConfig {
+    pub secret: String,
+    pub access_token_expires_minutes: i64,
+    pub refresh_token_expires_days: i64,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct RateLimitConfig {
+    pub per_second: u64,
+    pub burst_size: u32,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
     pub web: WebConfig,
     pub database: DatabaseConfig,
-    pub jwt_secret: String,
+    pub jwt: JwtConfig,
+    pub ratelimit: RateLimitConfig,
 }
 
 impl AppConfig {
@@ -30,9 +44,9 @@ impl AppConfig {
         dotenv().ok();
 
         // Check for JWT_SECRET first
-        if std::env::var("APP_JWT_SECRET").is_err() {
+        if std::env::var("APP_JWT__SECRET").is_err() {
             // Use a more specific error type or just panic for critical configs
-            panic!("FATAL: APP_JWT_SECRET environment variable not set.");
+            panic!("FATAL: APP_JWT__SECRET environment variable not set.");
         }
 
         let config = Figment::new()
