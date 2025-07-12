@@ -3,8 +3,20 @@ name: Rust CI
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'Config.toml'
+      - '.env'
+      - '.pre-commit-config.yaml'
   pull_request:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'Config.toml'
+      - '.env'
+      - '.pre-commit-config.yaml'
 
 env:
   CARGO_TERM_COLOR: always
@@ -45,10 +57,10 @@ jobs:
 
       - name: Create Database File for CI
         run: touch test_ci.db
-      
+
       - name: Run database migrations
         run: just db-migrate
-        
+
       - name: Lint code
         run: just lint
 
