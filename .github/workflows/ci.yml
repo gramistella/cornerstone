@@ -20,15 +20,16 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # This is a safe, non-production secret for CI purposes
   APP_JWT_SECRET: "ci-test-secret-that-is-at-least-32-bytes-long"
-  # Point to a temporary db file for the CI environment
-  DATABASE_URL: "sqlite:test_ci.db"
 
 jobs:
-  build-and-test:
-    name: Build & Test
+  # Job to test the full workflow against SQLite
+  test-sqlite:
+    name: Test (SQLite)
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "sqlite:test_ci.db"
+      DATABASE_URL_SQLITE: "sqlite:test_ci.db"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -41,7 +42,7 @@ jobs:
       - name: Install just
         run: cargo install just
 
-      - name: Install sqlx-cli
+      - name: Install sqlx-cli for SQLite
         run: cargo install sqlx-cli --no-default-features --features native-tls,sqlite
 
       - name: Cache Cargo dependencies
@@ -53,25 +54,89 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-sqlite-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Create Database File for CI
+      - name: Create SQLite Database File
         run: touch test_ci.db
 
-      - name: Run database migrations
-        run: just db-migrate
+      - name: Run Database Migrations
+        # This is needed for the tests and for the linting step that follows
+        run: just db-migrate-sqlite
 
       - name: Lint code
-        run: just lint
+        # With DATABASE_URL set and migrations run, sqlx macros will validate
+        run: just lint-sqlite
 
       - name: Check code formatting
         run: cargo fmt --all --check
 
-      - name: Run backend tests
-        # The test itself creates an in-memory db, but db-migrate
-        # also checks that the migration files are valid SQL.
-        run: just test-backend
+      - name: Run backend tests (SQLite)
+        run: just test-backend-sqlite
 
-      - name: Build all packages (Release mode)
-        # This is a good final check to ensure everything compiles in release mode
-        run: cargo build --workspace --release
+      - name: Build (Release mode)
+        # Be explicit with features to ensure the correct database is used
+        run: cargo build --workspace --release --no-default-features --features "db-sqlite,svelte-ui"
+
+  # Job to test the full workflow against PostgreSQL
+  test-postgres:
+    name: Test (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: "postgres://postgres:password@localhost:5432/testdb"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install just
+        run: cargo install just
+
+      - name: Install sqlx-cli for PostgreSQL
+        run: cargo install sqlx-cli --no-default-features --features native-tls,postgres
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-postgres-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run Database Migrations
+        # This is needed for the tests and for the linting step that follows
+        run: just db-migrate-postgres
+
+      - name: Lint code
+        # With DATABASE_URL set and migrations run, sqlx macros will validate
+        run: just lint-postgres
+
+      - name: Check code formatting
+        run: cargo fmt --all --check
+
+      - name: Run backend tests (PostgreSQL)
+        run: just test-backend-postgres
+
+      - name: Build (Release mode)
+        # Be explicit with features to ensure the correct database is used
+        run: cargo build --workspace --release --no-default-features --features "db-postgres,svelte-ui"

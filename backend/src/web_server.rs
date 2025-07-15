@@ -9,8 +9,8 @@ use axum::{
     Json, Router,
 };
 
+use crate::db::DbPool;
 use serde::Deserialize;
-use sqlx::SqlitePool;
 use tower_http::{
     cors::CorsLayer,
     request_id::{MakeRequestUuid, SetRequestIdLayer},
@@ -60,7 +60,7 @@ struct ApiDoc;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub db_pool: SqlitePool,
+    pub db_pool: DbPool,
     pub app_config: AppConfig,
 }
 
@@ -235,7 +235,7 @@ async fn create_contact(
         ContactDto,
         r#"
         INSERT INTO contacts (user_id, name, email, age, subscribed, contact_type)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id, name, email, age, subscribed, contact_type;
         "#,
         user.id, // Add the user_id here
@@ -288,7 +288,7 @@ async fn get_contact(
 
     let result = sqlx::query_as!(
         ContactDto,
-        "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE id = ? AND user_id = ?",
+        "SELECT id, name, email, age, subscribed, contact_type FROM contacts WHERE id = $1 AND user_id = $2",
         id,
         user.id
     )
@@ -331,8 +331,8 @@ async fn get_contacts(
     axum::extract::Query(pagination): axum::extract::Query<Pagination>, // <-- Add this
 ) -> Result<Json<Vec<ContactDto>>, AppError> {
     // Set default values for pagination
-    let page = pagination.page.unwrap_or(1);
-    let per_page = pagination.per_page.unwrap_or(20);
+    let page = pagination.page.unwrap_or(1) as i64;
+    let per_page = pagination.per_page.unwrap_or(20) as i64;
     let offset = (page - 1) * per_page;
 
     tracing::info!(
@@ -346,8 +346,8 @@ async fn get_contacts(
         ContactDto,
         "SELECT id, name, email, age, subscribed, contact_type
          FROM contacts
-         WHERE user_id = ?
-         LIMIT ? OFFSET ?",
+         WHERE user_id = $1
+         LIMIT $2 OFFSET $3",
         user.id,
         per_page,
         offset
@@ -381,8 +381,8 @@ async fn update_contact(
     let result = sqlx::query(
         r#"
         UPDATE contacts
-        SET name = ?, email = ?, age = ?, subscribed = ?, contact_type = ?
-        WHERE id = ? AND user_id = ?
+        SET name = $1, email = $2, age = $3, subscribed = $4, contact_type = $5
+        WHERE id = $6 AND user_id = $7
         "#,
     )
     .bind(&updated_contact.name)
@@ -421,7 +421,7 @@ async fn delete_contact(
 ) -> Result<StatusCode, AppError> {
     tracing::info!("Deleting contact with id: {} for user {}", id, user.id);
 
-    let result = sqlx::query("DELETE FROM contacts WHERE id = ? AND user_id = ?")
+    let result = sqlx::query("DELETE FROM contacts WHERE id = $1 AND user_id = $2")
         .bind(id)
         .bind(user.id)
         .execute(&state.db_pool)

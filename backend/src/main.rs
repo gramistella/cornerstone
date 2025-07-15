@@ -1,13 +1,14 @@
 // Use the library part of the `backend` crate instead of a local module.
 use backend::web_server::AppState;
-use sqlx::sqlite::SqlitePoolOptions;
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use backend::config::AppConfig;
+use backend::db::DbPoolOptions;
 
 use tokio::signal;
 
+use std::env;
 use std::net::IpAddr;
 
 async fn shutdown_signal() {
@@ -47,14 +48,29 @@ async fn main() {
 
     let config = AppConfig::from_env().expect("Failed to load configuration");
 
-    let db_pool = SqlitePoolOptions::new()
+    let database_url =
+        env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
+
+    let db_pool = DbPoolOptions::new()
         .max_connections(5)
-        .connect(&config.database.url)
+        .connect(&database_url)
         .await
         .unwrap();
 
     tracing::info!("Running database migrations...");
-    sqlx::migrate!("./migrations").run(&db_pool).await.ok();
+
+    #[cfg(feature = "db-sqlite")]
+    sqlx::migrate!("./migrations/sqlite")
+        .run(&db_pool)
+        .await
+        .unwrap();
+
+    #[cfg(feature = "db-postgres")]
+    sqlx::migrate!("./migrations/postgres")
+        .run(&db_pool)
+        .await
+        .unwrap();
+
     tracing::info!("Migrations complete.");
 
     let app_state = AppState {

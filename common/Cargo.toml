@@ -8,6 +8,9 @@ name = "type-exporter"
 path = "src/bin/type_exporter.rs"
 required-features = ["ts_export"] # This binary only works when the feature is enabled
 
+[[bin]]
+name = "workspace_helper"
+path = "src/bin/workspace_helper.rs"
 
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
@@ -15,6 +18,7 @@ serde_json = "1.0.140"
 # slint = { version = "1.12.1", features = ["serde"] }
 validator = { version = "0.20.0", features = ["derive"] }
 utoipa = { version = "5.4.0", features = ["axum_extras", "chrono"] }
+toml = "0.8.14"
 
 # ts-rs as an optional dependency for the svelte UI
 ts-rs = { version = "11.0.1", optional = true, features = ["format"] }
@@ -23,7 +27,7 @@ ts-rs = { version = "11.0.1", optional = true, features = ["format"] }
 dprint-plugin-typescript = { version = "0.95.8", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-sqlx = { version = "0.8.0", default-features = false, features = ["macros", "sqlite"] }
+sqlx = { version = "0.8.0", default-features = false, features = ["macros"] }
 
 [build-dependencies]
 slint-build = "1.12.1"
@@ -32,3 +36,5 @@ slint-build = "1.12.1"
 [features]
 default = ["ts_export"]
 ts_export = ["dep:ts-rs", "dep:dprint-plugin-typescript"]
+db-sqlite = ["sqlx/sqlite"]
+db-postgres = ["sqlx/postgres"]

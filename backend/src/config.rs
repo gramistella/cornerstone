@@ -7,11 +7,6 @@ use serde::Deserialize;
 use dotenvy::dotenv;
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct DatabaseConfig {
-    pub url: String,
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct WebConfig {
     pub addr: String,
     pub port: u16,
@@ -34,7 +29,6 @@ pub struct RateLimitConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
     pub web: WebConfig,
-    pub database: DatabaseConfig,
     pub jwt: JwtConfig,
     pub ratelimit: RateLimitConfig,
 }

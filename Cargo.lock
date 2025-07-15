@@ -649,6 +649,7 @@ dependencies = [
  "tracing-subscriber",
  "utoipa",
  "utoipa-swagger-ui",
+ "uuid",
  "validator",
 ]
 
@@ -1092,6 +1093,7 @@ dependencies = [
  "serde_json",
  "slint-build",
  "sqlx",
+ "toml",
  "ts-rs",
  "utoipa",
  "validator",

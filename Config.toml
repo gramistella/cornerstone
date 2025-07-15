@@ -4,9 +4,7 @@ addr = "127.0.0.1"
 port = 8080
 cors_origin = "http://localhost:5173"
 
-# Configuration for the database connection
-[database]
-url = "sqlite:backend/database.db"
+# The configuration for the database connection is not here but in .env
 
 # Configuration for API rate limiting
 [ratelimit]

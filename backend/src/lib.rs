@@ -3,6 +3,7 @@
 // contents available to other crates, like our integration test.
 pub mod auth;
 pub mod config;
+pub mod db;
 pub mod error;
 pub mod extractors;
 pub mod web_server;

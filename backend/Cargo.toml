@@ -14,7 +14,7 @@ tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 dotenvy = "0.15.7"
 anyhow = "1.0.98"
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "macros", "chrono"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "macros", "chrono", "migrate"], default-features = false }
 axum-extra = { version = "0.10.1", features = ["typed-header"] }
 jsonwebtoken = "9.3.1"
 bcrypt = "0.17.0"
@@ -31,11 +31,14 @@ tower_governor = "0.7.0"
 thiserror = "2.0.12"
 utoipa = { version = "5.4.0", features = ["axum_extras", "chrono", "openapi_extensions"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
+uuid = { version = "1.8", features = ["v4"] }
 
 [features]
-default = ["svelte-ui"]
+default = ["svelte-ui", "db-sqlite"]
 svelte-ui = []
 slint-ui = []
+db-sqlite = ["sqlx/sqlite", "common/db-sqlite"]
+db-postgres = ["sqlx/postgres", "common/db-postgres"]
 
 [lib]
 name = "backend"
@@ -52,4 +55,4 @@ http-body-util = "0.1"
 serde_json = "1.0.140"
 # For the `ServiceExt::oneshot` testing utility
 tower = { version = "0.5.2", features = ["full"] }
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "postgres", "macros"] }

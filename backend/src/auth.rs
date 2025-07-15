@@ -17,11 +17,10 @@ use axum_extra::{
 
 use crate::config::JwtConfig;
 use crate::error::AppError;
-use crate::extractors::AuthUser;
 use crate::web_server::AppState;
+use crate::{db::DbPool, extractors::AuthUser};
 use rand::Rng;
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
 use utoipa::ToSchema;
 use validator::Validate;
 
@@ -62,7 +61,7 @@ struct RefreshTokenRecord {
 /// ensuring old refresh tokens are invalidated upon use.
 async fn issue_tokens(
     user_id: i64,
-    db_pool: &SqlitePool,
+    db_pool: &DbPool,
     jwt_config: &JwtConfig,
     old_token_hash: Option<&str>,
 ) -> Result<LoginResponse, AppError> {
@@ -104,23 +103,23 @@ async fn issue_tokens(
 
     // If an old token was used (in a refresh operation), delete it.
     if let Some(old_hash) = old_token_hash {
-        sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = ?")
-            .bind(old_hash)
+        sqlx::query!("DELETE FROM refresh_tokens WHERE token_hash = $1", old_hash)
             .execute(&mut *tx)
             .await?;
     }
 
     // Insert the new refresh token, replacing any existing token for the user.
     // This invalidates any other sessions if the user logs in again.
-    sqlx::query(
-        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)
+
+    sqlx::query!(
+		"INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)
          ON CONFLICT(user_id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at",
-    )
-    .bind(user_id)
-    .bind(&new_refresh_token_hash)
-    .bind(new_refresh_token_exp)
-    .execute(&mut *tx)
-    .await?;
+		user_id,
+		new_refresh_token_hash,
+		new_refresh_token_exp
+	)
+	.execute(&mut *tx)
+	.await?;
 
     tx.commit().await?;
 
@@ -152,13 +151,16 @@ pub async fn register(
     // Validate the incoming payload
     payload.validate()?;
 
-    tracing::info!("Registering user with email: {}", payload.email);
+    tracing::info!("Registering user with email: {}", &payload.email);
     // Check if user already exists
-    let existing_user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE email = ?")
-        .bind(&payload.email)
-        .fetch_optional(&state.db_pool)
-        .await
-        .map_err(|_| (AppError::InternalServerError("Database error".to_string())))?;
+    let existing_user: Option<User> = sqlx::query_as!(
+        User,
+        "SELECT id as \"id!\", email, password_hash FROM users WHERE email = $1",
+        payload.email
+    )
+    .fetch_optional(&state.db_pool)
+    .await
+    .map_err(|_| (AppError::InternalServerError("Database error".to_string())))?;
 
     if existing_user.is_some() {
         return Err(AppError::Conflict(
@@ -173,15 +175,17 @@ pub async fn register(
     })?;
 
     // Insert new user into the database
-    sqlx::query("INSERT INTO users (email, password_hash) VALUES (?, ?)")
-        .bind(&payload.email)
-        .bind(&password_hash)
-        .execute(&state.db_pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to create user: {}", e);
-            AppError::InternalServerError("Failed to create user".to_string())
-        })?;
+    sqlx::query!(
+        "INSERT INTO users (email, password_hash) VALUES ($1, $2)",
+        payload.email,
+        password_hash
+    )
+    .execute(&state.db_pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create user: {}", e);
+        AppError::InternalServerError("Failed to create user".to_string())
+    })?;
 
     Ok(StatusCode::CREATED)
 }
@@ -205,12 +209,15 @@ pub async fn login(
     // Validate the incoming payload
     payload.validate()?;
 
-    tracing::info!("Logging in user with email: {}", payload.email);
-    let user: User = sqlx::query_as("SELECT * FROM users WHERE email = ?")
-        .bind(&payload.email)
-        .fetch_optional(&state.db_pool)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
+    tracing::info!("Logging in user with email: {}", &payload.email);
+    let user: User = sqlx::query_as!(
+        User,
+        "SELECT id as \"id!\", email, password_hash FROM users WHERE email = $1",
+        payload.email
+    )
+    .fetch_optional(&state.db_pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
 
     if !verify(&payload.password, &user.password_hash)? {
         return Err(AppError::Unauthorized);
@@ -241,21 +248,25 @@ pub async fn refresh(
     let incoming_token_hash = hex::encode(hasher.finalize());
 
     // Find the token in the database by its hash.
-    let record: RefreshTokenRecord =
-        sqlx::query_as("SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?")
-            .bind(&incoming_token_hash)
-            .fetch_optional(&state.db_pool)
-            .await?
-            .ok_or(AppError::Unauthorized)?;
+    let record: RefreshTokenRecord = sqlx::query_as!(
+        RefreshTokenRecord,
+        "SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = $1",
+        incoming_token_hash
+    )
+    .fetch_optional(&state.db_pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
 
     // Check if the database token has expired.
     if record.expires_at < Utc::now().naive_utc() {
         // As a cleanup, remove the expired token from the DB
-        sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = ?")
-            .bind(&incoming_token_hash)
-            .execute(&state.db_pool)
-            .await
-            .ok(); // We don't care about the result of the cleanup
+        sqlx::query!(
+            "DELETE FROM refresh_tokens WHERE token_hash = $1",
+            incoming_token_hash
+        )
+        .execute(&state.db_pool)
+        .await
+        .ok(); // We don't care about the result of the cleanup
         return Err(AppError::Unauthorized);
     }
 
@@ -285,8 +296,7 @@ pub async fn refresh(
 )]
 pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode, AppError> {
     // Simply delete the refresh token from the database
-    sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")
-        .bind(user.id)
+    sqlx::query!("DELETE FROM refresh_tokens WHERE user_id = $1", user.id)
         .execute(&state.db_pool)
         .await?;
 
@@ -325,8 +335,8 @@ pub async fn auth_middleware(
 
     // Fetch the user from the database ONCE in the middleware
     let user = sqlx::query_as!(
-        crate::auth::User,
-        "SELECT id, email, password_hash FROM users WHERE id = ?",
+        User,
+        "SELECT id, email, password_hash FROM users WHERE id = $1",
         user_id
     )
     .fetch_optional(&state.db_pool)

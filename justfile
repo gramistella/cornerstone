@@ -4,6 +4,7 @@ set shell := ["bash", "-euc"]
 # Load environment variables from .env files
 set dotenv-load := true
 
+
 # Default command to run when you just type `just`
 default: check
 
@@ -16,10 +17,20 @@ check:
     @echo "✅ Checking workspace for errors..."
     @cargo check --workspace
 
-# Lint the workspace for style and correctness issues
+# Generic lint command (for local use, may use default features)
 lint:
     @echo "🔎 Linting workspace with Clippy..."
     @cargo clippy --workspace --all-targets -- -D warnings
+
+# Lint specifically for SQLite
+lint-sqlite:
+    @echo "🔎 Linting workspace for SQLite..."
+    @cargo clippy --workspace --all-targets --no-default-features --features "db-sqlite,svelte-ui" -- -D warnings
+
+# Lint specifically for PostgreSQL
+lint-postgres:
+    @echo "🔎 Linting workspace for PostgreSQL..."
+    @cargo clippy --workspace --all-targets --no-default-features --features "db-postgres,svelte-ui" -- -D warnings
 
 # Check all SQL queries against the running database at compile time
 db-prepare:
@@ -79,32 +90,49 @@ test-package package:
 
 # Convenience alias to run backend tests.
 # Ensures the database is migrated before running tests.
-test-backend: db-migrate
-    @just test-package "backend"
-
+#test-backend: db-migrate
+#    @just test-package "backend"
 
 # -----------------------------------------------------------------------------
 # # Database Commands
 # -----------------------------------------------------------------------------
 
-# Run database migrations using sqlx-cli.
-# NOTE: This requires `sqlx-cli` to be installed (`cargo install sqlx-cli`).
-db-migrate:
-    @echo "🗄️ Running database migrations..."
-    @sqlx migrate run --source backend/migrations
+# Run database migrations for SQLite
+db-migrate-sqlite:
+    @echo "🗄️ Running SQLite database migrations..."
+    @sqlx migrate run --source backend/migrations/sqlite --database-url "$DATABASE_URL_SQLITE"
 
-# DANGER: Deletes and recreates the database, then runs all migrations.
-# This will ask for confirmation before proceeding.
-[confirm("⚠️ This will DELETE the current database. Are you sure?")]
-db-reset:
-    @echo "-> Proceeding with database reset..."
-    @echo "  - Deleting old database..."
+# Run database migrations for PostgreSQL
+db-migrate-postgres:
+    @echo "🗄️ Running PostgreSQL database migrations..."
+    @sqlx migrate run --source backend/migrations/postgres --database-url "$DATABASE_URL"
+
+# DANGER: Drops and recreates the database, then runs all migrations.
+[confirm("⚠️ This will DELETE the current PostgreSQL database. Are you sure?")]
+db-reset-postgres:
+    @echo "-> Dropping and recreating PostgreSQL database..."
+    @sqlx database drop --database-url "$DATABASE_URL"
+    @sqlx database create --database-url "$DATABASE_URL"
+    @just db-migrate-postgres
+
+[confirm("⚠️ This will DELETE the current SQLite database file. Are you sure?")]
+db-reset-sqlite:
+    @echo "-> Deleting and recreating SQLite database file..."
     @rm -f backend/database.db
-    @echo "  - Creating a new database file..."
     @touch backend/database.db
-    @echo "  - Running migrations to recreate the database and schema..."
-    @just db-migrate
-    @echo "✨ Database reset complete."
+    @just db-migrate-sqlite
+
+# Run backend tests against SQLite
+test-backend-sqlite: db-migrate-sqlite
+    @echo "🧪 Running backend tests against SQLite..."
+    # Add --no-default-features to be explicit
+    @cargo test -p backend --no-default-features --features "db-sqlite,svelte-ui"
+
+# Run backend tests against PostgreSQL
+test-backend-postgres: db-migrate-postgres
+    @echo "🧪 Running backend tests against PostgreSQL..."
+    # Add --no-default-features to prevent the default 'db-sqlite' from being included
+    @cargo test -p backend --no-default-features --features "db-postgres,svelte-ui"
 
 # -----------------------------------------------------------------------------
 # # Deployment & Execution Commands
