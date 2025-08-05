@@ -1,10 +1,10 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, email, password_hash FROM users WHERE id = ?",
+  "query": "SELECT id as \"id!\", email, password_hash FROM users WHERE email = $1",
   "describe": {
     "columns": [
       {
-        "name": "id",
+        "name": "id!",
         "ordinal": 0,
         "type_info": "Integer"
       },
@@ -23,10 +23,10 @@
       "Right": 1
     },
     "nullable": [
-      false,
+      true,
       false,
       false
     ]
   },
-  "hash": "1bc5a51762717e45292626052f0a65ac0b8a001798a2476ea86143c5565df399"
+  "hash": "35279c5ce51b5389ede5b9a70db387f222cd793e3884e9123ac9c4c80dbc34b9"
 }

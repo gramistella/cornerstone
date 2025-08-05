@@ -23,64 +23,38 @@ env:
   APP_JWT_SECRET: "ci-test-secret-that-is-at-least-32-bytes-long"
 
 jobs:
-  # Job to test the full workflow against SQLite
-  test-sqlite:
-    name: Test (SQLite)
+  check-format:
+    name: Check Formatting
     runs-on: ubuntu-latest
-    env:
-      DATABASE_URL: "sqlite:test_ci.db"
-      DATABASE_URL_SQLITE: "sqlite:test_ci.db"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-
-      - name: Install just
-        run: cargo install just
-
-      - name: Install sqlx-cli for SQLite
-        run: cargo install sqlx-cli --no-default-features --features native-tls,sqlite
-
-      - name: Cache Cargo dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-sqlite-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Create SQLite Database File
-        run: touch test_ci.db
-
-      - name: Run Database Migrations
-        # This is needed for the tests and for the linting step that follows
-        run: just db-migrate-sqlite
-
-      - name: Lint code
-        # With DATABASE_URL set and migrations run, sqlx macros will validate
-        run: just lint-sqlite
-
       - name: Check code formatting
         run: cargo fmt --all --check
 
-      - name: Run backend tests (SQLite)
-        run: just test-backend-sqlite
-
-      - name: Build (Release mode)
-        # Be explicit with features to ensure the correct database is used
-        run: cargo build --workspace --release --no-default-features --features "db-sqlite,svelte-ui"
-
-  # Job to test the full workflow against PostgreSQL
-  test-postgres:
-    name: Test (PostgreSQL)
+  test:
+    name: Test (${{ matrix.db.name }})
     runs-on: ubuntu-latest
+    needs: check-format # Run after formatting check passes
+    strategy:
+      fail-fast: false
+      matrix:
+        db:
+          - name: SQLite
+            type: sqlite
+            sqlx_features: native-tls,sqlite
+            url: "sqlite:test_ci.db"
+          - name: PostgreSQL
+            type: postgres
+            sqlx_features: native-tls,postgres
+            url: "postgres://postgres:password@localhost:5432/testdb"
+
+    # The service is defined for the entire job. It will be spun up
+    # for all matrix configurations but only used by the PostgreSQL test.
     services:
       postgres:
         image: postgres:15
@@ -95,8 +69,13 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
     env:
-      DATABASE_URL: "postgres://postgres:password@localhost:5432/testdb"
+      # Set the DATABASE_URL for sqlx-cli and the application tests
+      DATABASE_URL: ${{ matrix.db.url }}
+      # This is for the .env.example fallback
+      DATABASE_URL_SQLITE: "sqlite:test_ci.db"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -109,8 +88,8 @@ jobs:
       - name: Install just
         run: cargo install just
 
-      - name: Install sqlx-cli for PostgreSQL
-        run: cargo install sqlx-cli --no-default-features --features native-tls,postgres
+      - name: Install sqlx-cli for ${{ matrix.db.name }}
+        run: cargo install sqlx-cli --no-default-features --features ${{ matrix.db.sqlx_features }}
 
       - name: Cache Cargo dependencies
         uses: actions/cache@v4
@@ -121,22 +100,20 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-postgres-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ matrix.db.type }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Create SQLite Database File
+        if: matrix.db.type == 'sqlite'
+        run: touch test_ci.db
 
       - name: Run Database Migrations
-        # This is needed for the tests and for the linting step that follows
-        run: just db-migrate-postgres
+        run: just db-migrate-${{ matrix.db.type }}
 
       - name: Lint code
-        # With DATABASE_URL set and migrations run, sqlx macros will validate
-        run: just lint-postgres
+        run: just lint-${{ matrix.db.type }}
 
-      - name: Check code formatting
-        run: cargo fmt --all --check
-
-      - name: Run backend tests (PostgreSQL)
-        run: just test-backend-postgres
+      - name: Run backend tests (${{ matrix.db.name }})
+        run: just test-backend-${{ matrix.db.type }}
 
       - name: Build (Release mode)
-        # Be explicit with features to ensure the correct database is used
-        run: cargo build --workspace --release --no-default-features --features "db-postgres,svelte-ui"
+        run: cargo build --workspace --release --no-default-features --features "db-${{ matrix.db.type }},svelte-ui"

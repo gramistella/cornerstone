@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, name, email, age, subscribed, contact_type \n         FROM contacts \n         WHERE user_id = ?\n         LIMIT ? OFFSET ?",
+  "query": "SELECT id, name, email, age, subscribed, contact_type\n         FROM contacts\n         WHERE user_id = $1\n         LIMIT $2 OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -46,5 +46,5 @@
       false
     ]
   },
-  "hash": "b4e097509bcd3433252b018a568a7d57a79a231a329a948e99bda8bd882fa40b"
+  "hash": "4d4af1aa68697d04adc0c294390e10c8e9c45f3917eb3395ce9d6b82735b967b"
 }

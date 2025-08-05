@@ -8,6 +8,8 @@ use sqlx::Executor;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
+pub const TEST_JWT_SECRET: &str = "test_secret";
+
 /// Spawn a test server and return the address and a reqwest client.
 pub async fn spawn_app() -> (SocketAddr, reqwest::Client, DbPool) {
     // The listener is bound to a random available port.
@@ -64,7 +66,7 @@ pub async fn spawn_app() -> (SocketAddr, reqwest::Client, DbPool) {
                 cors_origin: "http://localhost:5173".to_string(),
             },
             jwt: JwtConfig {
-                secret: "test_secret".to_string(),
+                secret: TEST_JWT_SECRET.to_string(),
                 access_token_expires_minutes: 1,
                 refresh_token_expires_days: 1,
             },
@@ -98,7 +100,7 @@ pub async fn spawn_app() -> (SocketAddr, reqwest::Client, DbPool) {
                 cors_origin: "http://localhost:5173".to_string(),
             },
             jwt: JwtConfig {
-                secret: "test_secret".to_string(),
+                secret: TEST_JWT_SECRET.to_string(),
                 access_token_expires_minutes: 15,
                 refresh_token_expires_days: 7,
             },

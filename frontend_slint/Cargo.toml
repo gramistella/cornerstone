@@ -5,13 +5,13 @@ edition = "2021"
 build = "build.rs"
 
 [dependencies]
-slint = "1.12.1"
-common = { path = "../common" }
-reqwest = { version = "0.12.20", features = ["json"] }
-serde = { version = "1.0.219", features = ["derive"] }
+slint = { workspace = true }
+common = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
 # General tokio dependency (without 'net' feature) for things like spawn_local
-tokio = { version = "1.45.1", features = ["macros"] } # 'macros' is often useful
-tracing = "0.1.41"
+tokio = { workspace = true, features = ["macros"] } # 'macros' is often useful
+tracing = { workspace = true }
 
 
 # Dependencies specifically for the WASM target
@@ -28,7 +28,7 @@ tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros", "net"] }
 
 
 [build-dependencies]
-slint-build = "1.12.1"
+slint-build = { workspace = true }
 
 [lib]
 name = "frontend"
@@ -37,6 +37,3 @@ crate-type = ["cdylib"]
 [[bin]]
 name = "frontend_bin"
 path = "src/main.rs"
-
-[profile.dev]
-panic = "unwind"

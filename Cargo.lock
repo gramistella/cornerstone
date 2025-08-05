@@ -1091,7 +1091,6 @@ dependencies = [
  "dprint-plugin-typescript 0.95.8",
  "serde",
  "serde_json",
- "slint-build",
  "sqlx",
  "toml",
  "ts-rs",

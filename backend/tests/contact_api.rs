@@ -1,6 +1,7 @@
 use common::{ContactDto, Credentials, LoginResponse};
 use reqwest::StatusCode;
 mod helpers;
+use crate::helpers::TEST_JWT_SECRET;
 use backend::auth::Claims;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, EncodingKey, Header};
@@ -533,7 +534,7 @@ async fn test_invalid_and_expired_tokens() {
         nonce: "test-nonce".to_string(),
     };
     // The test secret is hardcoded in `helpers::spawn_app`
-    let secret = EncodingKey::from_secret("test_secret".as_ref());
+    let secret = EncodingKey::from_secret(TEST_JWT_SECRET.as_ref());
     let expired_token = encode(&Header::default(), &claims, &secret).unwrap();
 
     // Act: Send request with the expired token

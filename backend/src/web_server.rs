@@ -43,6 +43,8 @@ use utoipa_swagger_ui::SwaggerUi;
         get_contacts,
         create_contact,
         get_contact,
+        update_contact,
+        delete_contact
     ),
     // 👇 All components are now in a single block
     components(
@@ -111,10 +113,16 @@ pub fn create_router(app_state: AppState) -> Router {
     let governor_limiter = governor_conf.limiter().clone();
     let interval = Duration::from_secs(60);
     // a separate background task to clean up
-    std::thread::spawn(move || loop {
-        std::thread::sleep(interval);
-        tracing::debug!("Rate limiting storage size: {}", governor_limiter.len());
-        governor_limiter.retain_recent();
+    tokio::spawn(async move {
+        let mut interval_timer = tokio::time::interval(interval);
+        loop {
+            interval_timer.tick().await;
+            tracing::debug!(
+                "Cleaning up rate limit storage. Current size: {}",
+                governor_limiter.len()
+            );
+            governor_limiter.retain_recent();
+        }
     });
 
     // Public routes that do not require authentication
@@ -367,6 +375,23 @@ async fn get_contacts(
     }
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1/contacts/{id}",
+    request_body = ContactDto,
+    security(
+        ("bearer_auth" = [])
+    ),
+    params(
+        ("id" = i64, Path, description = "Contact ID")
+    ),
+    responses(
+        (status = 200, description = "Contact updated successfully", body = ContactDto),
+        (status = 404, description = "Contact not found"),
+        (status = 401, description = "Authentication required"),
+        (status = 422, description = "Validation error"),
+    )
+)]
 #[debug_handler]
 async fn update_contact(
     State(state): State<AppState>,
@@ -378,32 +403,28 @@ async fn update_contact(
 
     updated_contact.validate()?;
 
-    let result = sqlx::query(
+    let result = sqlx::query_as!(
+        ContactDto,
         r#"
         UPDATE contacts
         SET name = $1, email = $2, age = $3, subscribed = $4, contact_type = $5
         WHERE id = $6 AND user_id = $7
+        RETURNING id, name, email, age, subscribed, contact_type
         "#,
+        updated_contact.name,
+        updated_contact.email,
+        updated_contact.age,
+        updated_contact.subscribed,
+        updated_contact.contact_type,
+        id,
+        user.id
     )
-    .bind(&updated_contact.name)
-    .bind(&updated_contact.email)
-    .bind(updated_contact.age)
-    .bind(updated_contact.subscribed)
-    .bind(&updated_contact.contact_type)
-    .bind(id)
-    .bind(user.id)
-    .execute(&state.db_pool)
+    .fetch_optional(&state.db_pool)
     .await;
 
     match result {
-        Ok(execution_result) => {
-            if execution_result.rows_affected() > 0 {
-                // Return the updated data
-                Ok(Json(updated_contact))
-            } else {
-                Err(AppError::NotFound)
-            }
-        }
+        Ok(Some(contact)) => Ok(Json(contact)),
+        Ok(None) => Err(AppError::NotFound),
         Err(e) => {
             tracing::error!("Failed to update contact: {}", e);
             Err(AppError::InternalServerError(
@@ -413,6 +434,20 @@ async fn update_contact(
     }
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/contacts/{id}",
+    security(
+        ("bearer_auth" = [])
+    ),
+    params(
+        ("id" = i64, Path, description = "Contact ID")
+    ),
+    responses(
+        (status = 204, description = "Contact deleted successfully"),
+        (status = 404, description = "Contact not found"),
+    )
+)]
 #[debug_handler]
 async fn delete_contact(
     State(state): State<AppState>,

@@ -15,7 +15,7 @@ default: check
 # Check the entire workspace for errors without a full build.
 check:
     @echo "✅ Checking workspace for errors..."
-    @cargo check --workspace
+    @SQLX_OFFLINE=true cargo check --workspace
 
 # Generic lint command (for local use, may use default features)
 lint:
@@ -35,7 +35,8 @@ lint-postgres:
 # Check all SQL queries against the running database at compile time
 db-prepare:
     @echo "🗄️ Preparing SQLx queries..."
-    @cargo sqlx prepare --workspace -- --all-targets
+    @echo "    (This requires DATABASE_URL to be set in your .env file)"
+    @cargo sqlx prepare --workspace -- --package backend --all-targets
 
 # Build a specific package by name.
 # USAGE: just build backend | just build frontend_slint | just build common
@@ -138,43 +139,95 @@ test-backend-postgres: db-migrate-postgres
 # # Deployment & Execution Commands
 # -----------------------------------------------------------------------------
 
+# Build the production Docker image using docker-compose.
+docker-build:
+	@echo "🐳 Building production Docker image..."
+	@docker-compose build
+
+# Run the application using docker-compose.
+docker-run:
+	@echo "🚀 Starting application with docker-compose..."
+	@docker-compose up -d
+
+# Stop the application running via docker-compose.
+docker-stop:
+	@echo "🛑 Stopping docker-compose services..."
+	@docker-compose down
+
+# View logs from the docker-compose services.
+docker-logs:
+	@docker-compose logs -f
+
 # Copy the built frontend to the backend's static directory.
 copy-frontend frontend:
-    @echo "- Copying frontend files to backend/static/..."
-    @if [ "{{frontend}}" = "svelte" ]; then \
-        mkdir -p backend/static/svelte-build; \
-        find backend/static/svelte-build -mindepth 1 ! -name '.gitkeep' -exec rm -rf {} +; \
-        echo "  -> Copying SvelteKit build..."; \
-        cp -r frontend_svelte/build/* backend/static/svelte-build/; \
-    elif [ "{{frontend}}" = "slint" ]; then \
-        mkdir -p backend/static/slint-build/wasm; \
-        find backend/static/slint-build -mindepth 1 \
-            ! -name '.gitkeep' \
-            ! -name 'index.html' \
-            ! -path 'wasm/.gitkeep' \
-            -exec rm -rf {} +; \
-        echo "  -> Copying Slint WASM build..."; \
-        cp -r frontend_slint/static/wasm-pack/* backend/static/slint-build/wasm/; \
-    else \
-        echo "  -> Unknown frontend '{{frontend}}'. Aborting."; \
-        exit 1; \
+	#!/usr/bin/env bash
+	set -euc
+
+	echo "- Copying frontend files to backend/static/..."
+
+	if [ "{{frontend}}" = "svelte" ]; then
+		# --- SVELTE ---
+		mkdir -p backend/static/svelte-build
+		find backend/static/svelte-build -mindepth 1 ! -name '.gitkeep' -exec rm -rf {} +
+		echo "  -> Copying SvelteKit build..."
+		cp -r frontend_svelte/build/* backend/static/svelte-build/
+
+	elif [ "{{frontend}}" = "slint" ]; then
+		# --- SLINT ---
+		# 1. Clean the destination directories while preserving special files.
+		echo "  -> Cleaning build destination while preserving index.html..."
+		# Delete files in the root of slint-build, but KEEP index.html.
+		find backend/static/slint-build -maxdepth 1 -type f ! -name 'index.html' -delete
+		# Ensure the wasm directory exists.
+		mkdir -p backend/static/slint-build/wasm
+		# Clean everything inside wasm, but KEEP .gitkeep.
+		find backend/static/slint-build/wasm -mindepth 1 ! -name '.gitkeep' -exec rm -rf {} +
+
+		# 2. Copy the new WASM assets.
+		echo "  -> Copying new Slint WASM assets..."
+		# Copy the new build artifacts into the wasm/ subdirectory.
+		cp -r frontend_slint/static/wasm-pack/* backend/static/slint-build/wasm/
+		# Remove the example index.html from wasm-pack, as we use our own.
+		rm -f backend/static/slint-build/wasm/index.html
+
+	else
+		# --- ERROR ---
+		echo "  -> Unknown frontend '{{frontend}}'. Aborting."
+		exit 1
+	fi
+
+	echo "  ...done"
+
+
+
+
+# Build and run the specified frontend with the backend.
+# If no frontend is specified, it will be auto-detected from Cargo.toml.
+# USAGE: just run-web | just run-web svelte | just run-web slint | just run-web svelte-live
+run-web frontend="":
+    #!/usr/bin/env bash
+    # Set the UI to run based on the argument, or auto-detect if no argument is given.
+    UI_TO_RUN="{{frontend}}"
+    if [ -z "$UI_TO_RUN" ]; then
+        echo "🤔 No frontend specified, auto-detecting from Cargo.toml..."
+        UI_TO_RUN=$(cargo run --quiet -p common --bin workspace_helper | cut -d' ' -f2)
+        echo "✅ Detected UI: '$UI_TO_RUN'"
     fi
-    @echo "  ...done"
 
-
-# Build and run the specified frontend with the backend, or run in live-dev mode.
-# USAGE: just run-web svelte | just run-web slint | just run-web svelte-live
-run-web frontend="svelte":
-    @if [ "{{frontend}}" = "svelte-live" ]; then \
-        echo "🚀 Starting backend and SvelteKit dev server in parallel..."; \
-        echo "  -> Backend API will be at http://localhost:8080"; \
-        echo "  -> Svelte dev server will be at http://localhost:5173"; \
-        cd frontend_svelte && npx concurrently --kill-others --names "svelte,backend" "npm run dev" "cd .. && just run-backend"; \
-    else \
-        echo "📦 Building and running with static frontend: {{frontend}}"; \
-        just build-{{frontend}}; \
-        just copy-frontend {{frontend}}; \
-        just run-backend; \
+    # Execute the appropriate action based on the determined UI.
+    if [ "$UI_TO_RUN" = "svelte-live" ]; then
+        echo "🚀 Starting backend and SvelteKit dev server in parallel..."
+        echo "  -> Backend API will be at http://localhost:8080"
+        echo "  -> Svelte dev server will be at http://localhost:5173"
+        cd frontend_svelte && npx concurrently --kill-others --names "svelte,backend" "npm run dev" "cd .. && just run-backend";
+    elif [ "$UI_TO_RUN" = "svelte" ] || [ "$UI_TO_RUN" = "slint" ]; then
+        echo "📦 Building and running with static frontend: $UI_TO_RUN"
+        just build-$UI_TO_RUN
+        just copy-frontend $UI_TO_RUN
+        just run-backend
+    else
+        echo "❌ Unknown or unsupported frontend type: '$UI_TO_RUN'"
+        exit 1
     fi
 
 

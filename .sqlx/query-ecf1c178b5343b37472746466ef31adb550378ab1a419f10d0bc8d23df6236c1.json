@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE contacts\n        SET name = $1, email = $2, age = $3, subscribed = $4, contact_type = $5\n        WHERE id = $6 AND user_id = $7\n        RETURNING id, name, email, age, subscribed, contact_type\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "email",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "age",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "subscribed",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "contact_type",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ecf1c178b5343b37472746466ef31adb550378ab1a419f10d0bc8d23df6236c1"
+}
