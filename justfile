@@ -198,9 +198,6 @@ copy-frontend frontend:
 
 	echo "  ...done"
 
-
-
-
 # Build and run the specified frontend with the backend.
 # If no frontend is specified, it will be auto-detected from Cargo.toml.
 # USAGE: just run-web | just run-web svelte | just run-web slint | just run-web svelte-live

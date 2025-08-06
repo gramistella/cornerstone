@@ -26,9 +26,9 @@ ts-rs = { workspace = true, features = ["format"], optional = true }
 dprint-plugin-typescript = { workspace = true, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-sqlx = { version = "0.8.6", default-features = false, features = ["macros"] }
+sqlx = { workspace = true, features = ["macros"] }
 
-# Remember to remove ts_export from the default features when you chose slint-ui in the backend
+# You can remove ts_export from the default features when you chose slint-ui in the backend
 [features]
 default = ["ts_export"]
 ts_export = ["dep:ts-rs", "dep:dprint-plugin-typescript"]
