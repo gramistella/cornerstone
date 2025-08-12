@@ -16,6 +16,7 @@ repos:
       - id: check-toml # Checks toml files for parseable syntax.
       - id: check-merge-conflict # Checks for files that contain merge conflict strings.
 
+  # These take way too long per commit on an M1 MBP, do them manually or uncomment if you have a beefy computer
   # Hooks for Rust code formatting and linting
   - repo: https://github.com/doublify/pre-commit-rust
     rev: v1.0
@@ -27,8 +28,8 @@ repos:
         args: ["--workspace", "--all-targets", "--", "-D", "warnings"]
 
   # Hook for checking for unused dependencies in Cargo.toml
-  - repo: https://github.com/est31/cargo-udeps
-    rev: v0.1.57
-    hooks:
-      - id: udeps
-        args: ["--all-targets"]
+  # - repo: https://github.com/est31/cargo-udeps
+  #   rev: v0.1.57
+  #   hooks:
+  #     - id: udeps
+  #       args: ["--all-targets"]

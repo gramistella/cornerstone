@@ -1,10 +1,10 @@
+use dotenvy::dotenv;
 use figment::{
     providers::{Env, Format, Toml},
     Figment,
 };
 use serde::Deserialize;
-
-use dotenvy::dotenv;
+use std::fmt;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct WebConfig {
@@ -13,11 +13,28 @@ pub struct WebConfig {
     pub cors_origin: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct JwtConfig {
     pub secret: String,
     pub access_token_expires_minutes: i64,
     pub refresh_token_expires_days: i64,
+}
+
+// Custom Debug that redacts the secret
+impl fmt::Debug for JwtConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JwtConfig")
+            .field("secret", &"<redacted>")
+            .field(
+                "access_token_expires_minutes",
+                &self.access_token_expires_minutes,
+            )
+            .field(
+                "refresh_token_expires_days",
+                &self.refresh_token_expires_days,
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]

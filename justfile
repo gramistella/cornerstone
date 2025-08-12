@@ -42,7 +42,7 @@ db-prepare:
 # USAGE: just build backend | just build frontend_slint | just build common
 build package:
     @echo "📦 Building package: '{{package}}'..."
-    @cargo build -p {{package}}
+    @cargo build --workspace -p {{package}}
 
 # Convenience alias to build only the backend.
 build-backend:

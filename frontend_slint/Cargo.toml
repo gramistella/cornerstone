@@ -1,7 +1,11 @@
 [package]
 name = "frontend_slint"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
 build = "build.rs"
 
 [dependencies]

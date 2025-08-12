@@ -1,7 +1,11 @@
 [package]
 name = "backend"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
 
 [dependencies]
 axum = { workspace = true, features = ["macros"] }
@@ -34,7 +38,7 @@ utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 uuid = { workspace = true, features = ["v4"] }
 
 [features]
-default = ["slint-ui", "db-sqlite"]
+default = ["svelte-ui", "db-sqlite"]
 svelte-ui = []
 slint-ui = []
 db-sqlite = ["sqlx/sqlite", "common/db-sqlite"]

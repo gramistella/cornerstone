@@ -76,16 +76,19 @@ pub fn run() {
                 Ok(response) => {
                     tracing::info!("Login response: {:?}", response);
                     if response.status().is_success() {
-                        if let Ok(login_response) = response.json::<LoginResponse>().await {
-                            let token = login_response.access_token;
-                            slint::invoke_from_event_loop(move || {
-                                app_weak.unwrap().set_auth_token(token.into());
-                                // Fetch contacts after successful login
-                                //app_weak.unwrap().invoke_fetch_contacts();
-                            })
-                            .unwrap();
-                        } else {
-                            tracing::error!("Failed to parse login response");
+                        match response.json::<LoginResponse>().await {
+                            Ok(login_response) => {
+                                let token = login_response.access_token;
+                                slint::invoke_from_event_loop(move || {
+                                    app_weak.unwrap().set_auth_token(token.into());
+                                    // Fetch contacts after successful login
+                                    //app_weak.unwrap().invoke_fetch_contacts();
+                                })
+                                .unwrap();
+                            }
+                            _ => {
+                                tracing::error!("Failed to parse login response");
+                            }
                         }
                     } else {
                         let error_msg = response.text().await.unwrap_or_default();
@@ -147,25 +150,28 @@ pub fn run() {
             println!("Fetching contacts from backend...");
             match client.get(&url).bearer_auth(token).send().await {
                 Ok(response) => {
-                    if let Ok(contacts_dto) = response.json::<Vec<ContactDto>>().await {
-                        // This data is `Send` and can be moved across threads.
-                        let ui_contacts: Vec<Contact> =
-                            contacts_dto.into_iter().map(Into::into).collect();
+                    match response.json::<Vec<ContactDto>>().await {
+                        Ok(contacts_dto) => {
+                            // This data is `Send` and can be moved across threads.
+                            let ui_contacts: Vec<Contact> =
+                                contacts_dto.into_iter().map(Into::into).collect();
 
-                        // Post a task to the Slint event loop to update the UI.
-                        // The `move` captures `ui_contacts` and `app_weak`.
-                        let _ = slint::invoke_from_event_loop(move || {
-                            // This closure runs on the main UI thread.
-                            // It's now safe to create the Rc-based Slint model.
-                            let contacts_model = Rc::new(VecModel::from(ui_contacts));
+                            // Post a task to the Slint event loop to update the UI.
+                            // The `move` captures `ui_contacts` and `app_weak`.
+                            let _ = slint::invoke_from_event_loop(move || {
+                                // This closure runs on the main UI thread.
+                                // It's now safe to create the Rc-based Slint model.
+                                let contacts_model = Rc::new(VecModel::from(ui_contacts));
 
-                            // Set the model on the App component.
-                            // .into() is fine here, or you can pass it directly.
-                            app_weak.unwrap().set_contacts(contacts_model.into());
-                        });
-                        println!("Successfully fetched and updated contacts.");
-                    } else {
-                        println!("Failed to parse contacts from response.");
+                                // Set the model on the App component.
+                                // .into() is fine here, or you can pass it directly.
+                                app_weak.unwrap().set_contacts(contacts_model.into());
+                            });
+                            println!("Successfully fetched and updated contacts.");
+                        }
+                        _ => {
+                            println!("Failed to parse contacts from response.");
+                        }
                     }
                 }
                 Err(e) => {
@@ -283,16 +289,19 @@ pub fn run() {
             println!("Fetching contact {id} for edit...");
             match client.get(&url).bearer_auth(token).send().await {
                 Ok(response) => {
-                    if let Ok(contact_dto) = response.json::<ContactDto>().await {
-                        // Convert DTO to a slint::Contact struct
-                        let ui_contact: Contact = contact_dto.into();
+                    match response.json::<ContactDto>().await {
+                        Ok(contact_dto) => {
+                            // Convert DTO to a slint::Contact struct
+                            let ui_contact: Contact = contact_dto.into();
 
-                        // Update the UI on the main thread
-                        let _ = slint::invoke_from_event_loop(move || {
-                            app_weak.unwrap().set_contact_to_edit(ui_contact);
-                        });
-                    } else {
-                        println!("Failed to parse single contact from response.");
+                            // Update the UI on the main thread
+                            let _ = slint::invoke_from_event_loop(move || {
+                                app_weak.unwrap().set_contact_to_edit(ui_contact);
+                            });
+                        }
+                        _ => {
+                            println!("Failed to parse single contact from response.");
+                        }
                     }
                 }
                 Err(e) => {

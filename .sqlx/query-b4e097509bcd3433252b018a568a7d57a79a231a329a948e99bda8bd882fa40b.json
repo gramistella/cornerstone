@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id, name, email, age, subscribed, contact_type \n         FROM contacts \n         WHERE user_id = ?\n         LIMIT ? OFFSET ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "email",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "age",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "subscribed",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "contact_type",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b4e097509bcd3433252b018a568a7d57a79a231a329a948e99bda8bd882fa40b"
+}

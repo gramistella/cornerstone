@@ -66,10 +66,13 @@ graph TD
         SQLite[SQLite]
     end
 
-    User --> Frontend
-    Frontend --> Axum
+    User --> Svelte
+    User --> Slint
+    Svelte <--> Axum
+    Slint <--> Axum
     Axum --> SQLx
-    SQLx --> Database
+    SQLx --> Postgres
+    SQLx --> SQLite
 
     classDef frontend fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     classDef backend fill:#fff3e0,stroke:#f57c00,stroke-width:2px
@@ -104,28 +107,30 @@ This is the most common path for web applications.
 
 2.  **Update Workspace Configuration:**
     *   In the root `Cargo.toml`, remove `frontend_slint` from the `[workspace].members` array.
-    ```diff
-    # Cargo.toml
-    [workspace]
-    resolver = "2"
-    members = [
-        "backend",
-    -   "frontend_slint",
-        "common",
-    ]
-    ```
+
+        ```diff
+        # Cargo.toml
+        [workspace]
+        resolver = "2"
+        members = [
+            "backend",
+        -   "frontend_slint",
+            "common",
+        ]
+        ```
 
 3.  **Clean Up Backend Features:**
     *   In `backend/Cargo.toml`, you can remove the `slint-ui` feature entirely.
-    ```diff
-    # backend/Cargo.toml
-    [features]
-    - default = ["svelte-ui", "db-sqlite"]
-    + default = ["svelte-ui", "db-sqlite"] # Ensure this is correct for your DB
-    svelte-ui = []
-    - slint-ui = []
-    # ...
-    ```
+
+        ```diff
+        # backend/Cargo.toml
+        [features]
+        - default = ["svelte-ui", "db-sqlite"]
+        + default = ["svelte-ui", "db-sqlite"] # Ensure this is correct for your DB
+        svelte-ui = []
+        - slint-ui = []
+        # ...
+        ```
 
 4.  **Simplify the Backend Web Server:**
     *   In `backend/src/web_server.rs`, the `create_static_router` function has conditional compilation. You can remove the `#[cfg(feature = "slint-ui")]` block and the surrounding logic.
@@ -143,15 +148,16 @@ This is the path for a desktop-focused application.
 
 2.  **Clean Up Backend Features:**
     *   In `backend/Cargo.toml`, remove the `svelte-ui` feature.
-    ```diff
-    # backend/Cargo.toml
-    [features]
-    - default = ["svelte-ui", "db-sqlite"]
-    + default = ["slint-ui", "db-sqlite"] # Ensure this is correct for your DB
-    - svelte-ui = []
-    slint-ui = []
-    # ...
-    ```
+
+        ```diff
+        # backend/Cargo.toml
+        [features]
+        - default = ["svelte-ui", "db-sqlite"]
+        + default = ["slint-ui", "db-sqlite"] # Ensure this is correct for your DB
+        - svelte-ui = []
+        slint-ui = []
+        # ...
+        ```
 
 3.  **Simplify the Backend Web Server:**
     *   Follow the same logic as in Option A, but keep the `slint-ui` part and remove the `svelte-ui` part in `backend/src/web_server.rs`.
@@ -177,15 +183,16 @@ The process is the same whether you keep PostgreSQL or SQLite. The following exa
 
 1.  **Update Backend Features:**
     *   In `backend/Cargo.toml`, remove the `db-sqlite` feature and update the `default` list.
-    ```diff
-    # backend/Cargo.toml
-    [features]
-    - default = ["svelte-ui", "db-sqlite"]
-    + default = ["svelte-ui", "db-postgres"]
-    # ...
-    - db-sqlite = ["sqlx/sqlite", "common/db-sqlite"]
-    db-postgres = ["sqlx/postgres", "common/db-postgres"]
-    ```
+
+        ```diff
+        # backend/Cargo.toml
+        [features]
+        - default = ["svelte-ui", "db-sqlite"]
+        + default = ["svelte-ui", "db-postgres"]
+        # ...
+        - db-sqlite = ["sqlx/sqlite", "common/db-sqlite"]
+        db-postgres = ["sqlx/postgres", "common/db-postgres"]
+        ```
 
 2.  **Update Common Crate Features:**
     *   In `common/Cargo.toml`, remove the `db-sqlite` feature.
@@ -214,30 +221,30 @@ The CI pipeline in the template is configured to test against both PostgreSQL an
 
 1.  **Edit the CI Workflow:**
       * In `.github/workflows/ci.yml`, find the `matrix` within the `test` job.
-
       * Remove the entire list item for `SQLite`.
 
-        ```diff
-        # .github/workflows/ci.yml
-        # ...
-          test:
-            name: Test (${{ matrix.db.name }})
-            runs-on: ubuntu-latest
-            needs: check-format
-            strategy:
-              fail-fast: false
-              matrix:
-                db:
-        -         - name: SQLite
-        -           type: sqlite
-        -           sqlx_features: native-tls,sqlite
-        -           url: "sqlite:test_ci.db"
-                  - name: PostgreSQL
-                    type: postgres
-                    sqlx_features: native-tls,postgres
-                    url: "postgres://postgres:password@localhost:5432/testdb"
-        # ...
-        ```
+            ```diff
+            # .github/workflows/ci.yml
+            # ...
+            test:
+                name: Test (${{ matrix.db.name }})
+                runs-on: ubuntu-latest
+                needs: check-format
+                strategy:
+                fail-fast: false
+                matrix:
+                    db:
+            -         - name: SQLite
+            -           type: sqlite
+            -           sqlx_features: native-tls,sqlite
+            -           url: "sqlite:test_ci.db"
+                    - name: PostgreSQL
+                        type: postgres
+                        sqlx_features: native-tls,postgres
+                        url: "postgres://postgres:password@localhost:5432/testdb"
+            # ...
+            ```
+
 2.  **(Optional) Clean Up Steps:**
       * You can now safely delete the step named `"Create SQLite Database File"`, since it is no longer needed.
 
@@ -265,46 +272,46 @@ The CI pipeline in the template is configured to test against both PostgreSQL an
 
       * Since PostgreSQL is no longer used, you **must** also remove the entire `services` block that defines the postgres container.
 
-    ```diff
-    # .github/workflows/ci.yml
-    # ...
-        test:
-        name: Test (${{ matrix.db.name }})
-        runs-on: ubuntu-latest
-        needs: check-format
-        strategy:
-            fail-fast: false
-            matrix:
-            db:
-                - name: SQLite
-                type: sqlite
-                sqlx_features: native-tls,sqlite
-                url: "sqlite:test_ci.db"
-    -         - name: PostgreSQL
-    -           type: postgres
-    -           sqlx_features: native-tls,postgres
-    -           url: "postgres://postgres:password@localhost:5432/testdb"
+        ```diff
+        # .github/workflows/ci.yml
+        # ...
+            test:
+            name: Test (${{ matrix.db.name }})
+            runs-on: ubuntu-latest
+            needs: check-format
+            strategy:
+                fail-fast: false
+                matrix:
+                db:
+                    - name: SQLite
+                    type: sqlite
+                    sqlx_features: native-tls,sqlite
+                    url: "sqlite:test_ci.db"
+        -         - name: PostgreSQL
+        -           type: postgres
+        -           sqlx_features: native-tls,postgres
+        -           url: "postgres://postgres:password@localhost:5432/testdb"
 
-        # Since the PostgreSQL matrix entry is gone, this service is no longer needed.
-    -   services:
-    -     postgres:
-    -       image: postgres:15
-    -       env:
-    -         POSTGRES_USER: postgres
-    -         POSTGRES_PASSWORD: password
-    -         POSTGRES_DB: testdb
-    -       ports:
-    -         - 5432:5432
-    -       options: >-
-    -         --health-cmd pg_isready
-    -         --health-interval 10s
-    -         --health-timeout 5s
-    -         --health-retries 5
+            # Since the PostgreSQL matrix entry is gone, this service is no longer needed.
+        -   services:
+        -     postgres:
+        -       image: postgres:15
+        -       env:
+        -         POSTGRES_USER: postgres
+        -         POSTGRES_PASSWORD: password
+        -         POSTGRES_DB: testdb
+        -       ports:
+        -         - 5432:5432
+        -       options: >-
+        -         --health-cmd pg_isready
+        -         --health-interval 10s
+        -         --health-timeout 5s
+        -         --health-retries 5
 
-        env:
-            # Set the DATABASE_URL for sqlx-cli and the application tests
-    # ...
-    ```
+            env:
+                # Set the DATABASE_URL for sqlx-cli and the application tests
+        # ...
+        ```
 
 </details>
 
@@ -326,7 +333,7 @@ The CI pipeline in the template is configured to test against both PostgreSQL an
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/YOUR_USERNAME/cornerstone.git
+    git clone https://github.com/gramistella/cornerstone.git
     cd cornerstone
     ```
 
@@ -423,7 +430,7 @@ just run-web slint
 *   `just test`: Run the entire Rust test suite.
 *   `just lint`: Check the workspace for warnings and errors with Clippy.
 *   `just gen-types`: **Important!** Regenerate TypeScript types in `frontend_svelte` after changing shared Rust structs in the `common` crate.
-+ * `just db-prepare`: **Highly Recommended!** Checks all SQL queries in the `backend` against a running database to ensure they are valid at compile time.
+* `just db-prepare`: **Highly Recommended!** Checks all SQL queries in the `backend` against a running database to ensure they are valid at compile time.
 *   `just db-reset-sqlite`: Delete and recreate the local SQLite database.
 
 ---

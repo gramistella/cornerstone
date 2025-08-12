@@ -6,6 +6,15 @@ members = [
     "common",
 ]
 
+[workspace.package]
+version = "0.1.0"
+authors = ["Giovanni Ramistella <things-vacuous-07@icloud.com>"]
+edition = "2021"
+license = "MIT"
+readme = "readme.md"
+repository = "https://github.com/gramistella/cornerstone"
+
+
 [workspace.dependencies]
 anyhow = "1.0.98"
 axum = "0.8.4"
